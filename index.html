@@ -33,7 +33,7 @@
 
             <!-- Target Norm -->
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (тижнева)</label>
+                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (для рохрахунку дефіциту)</label>
                 <input type="number" id="normInput" value="42" min="1" 
                     class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold focus:outline-none focus:border-amber-500">
             </div>
@@ -99,7 +99,7 @@
                             <th class="px-4 py-3">Нікнейм</th>
                             <th class="px-4 py-3 text-center">Корегування</th>
                             <th class="px-4 py-3 text-center">Разом балів</th>
-                            <th class="px-4 py-3 text-center">% Норми</th>
+                            <th class="px-4 py-3 text-center">% Норми (з Т)</th>
                             <th class="px-4 py-3 text-center">Дефіцит</th>
                             <th class="px-4 py-3 text-center">Статус</th>
                             <th class="px-4 py-3 text-center">Дія</th>
@@ -136,21 +136,17 @@
                 const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 if (rawRows.length < 2) return;
 
-                let nameColIdx = 1; // B
-                let l2Idx = 9;      // J
-                let l3Idx = 10;     // K
-                let l4Idx = 11;     // L
-                let l5Idx = 12;     // M
+                let nameColIdx = 1;   // Стовпець B (User Name)
+                let pointsColIdx = 18; // Стовпець S (Points / Hunt)
+                let percentColIdx = 19; // Стовпець T (Goal Percentage / Points (Hunt) %)
 
+                // Динамічний пошук за назвами колонок
                 for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
                     for (let c = 0; c < row.length; c++) {
                         const cellVal = String(row[c]).trim().toLowerCase();
                         if (cellVal === 'user name' || cellVal === 'name') nameColIdx = c;
-                        if (cellVal.includes('l2 (hunt)')) l2Idx = c;
-                        if (cellVal.includes('l3 (hunt)')) l3Idx = c;
-                        if (cellVal.includes('l4 (hunt)')) l4Idx = c;
-                        if (cellVal.includes('l5 (hunt)')) l5Idx = c;
+                        if (cellVal === 'points (hunt)' || cellVal === 'points') pointsColIdx = c;
                     }
                 }
 
@@ -172,17 +168,27 @@
                         continue;
                     }
 
-                    const l2 = parseFloat(row[l2Idx]) || 0;
-                    const l3 = parseFloat(row[l3Idx]) || 0;
-                    const l4 = parseFloat(row[l4Idx]) || 0;
-                    const l5 = parseFloat(row[l5Idx]) || 0;
+                    // Зчитуємо очки зі стовпця S (18 індекс)
+                    const basePoints = parseFloat(row[pointsColIdx]) || 0;
 
-                    const basePoints = (l2 * 1) + (l3 * 3) + (l4 * 7) + (l5 * 10);
+                    // Зчитуємо відсоток зі стовпця T (19 індекс)
+                    let rawPercentStr = String(row[percentColIdx] || "").replace('%', '').trim();
+                    let filePercent = parseFloat(rawPercentStr);
+                    
+                    // Якщо у файлі дробове значення типу 1.12, переводимо в 112%
+                    if (!isNaN(filePercent) && filePercent > 0 && filePercent <= 5 && rawPercentStr.includes('.')) {
+                        filePercent = Math.round(filePercent * 100);
+                    } else if (isNaN(filePercent)) {
+                        filePercent = 0;
+                    } else {
+                        filePercent = Math.round(filePercent);
+                    }
 
                     parsedData.push({
                         id: parsedData.length,
                         name: rawName,
-                        basePoints: basePoints
+                        basePoints: basePoints,
+                        filePercent: filePercent
                     });
                 }
 
@@ -219,7 +225,9 @@
                 const isExcluded = excludedPlayers.has(player.id);
                 const isDebtor = !isExcluded && totalPoints < norm;
                 const deficit = isDebtor ? norm - totalPoints : 0;
-                const percent = Math.round((totalPoints / norm) * 100);
+                
+                // Якщо є ручне корегування балів, перераховуємо відсоток, інакше беремо прямо зі стовпчика T
+                const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
 
                 return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
             });
