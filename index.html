@@ -39,24 +39,6 @@
             </div>
         </div>
 
-        <!-- Filters & Actions Panel -->
-        <div id="actionsPanel" class="hidden bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap justify-between items-center gap-4">
-            <div class="flex items-center gap-2">
-                <input type="text" id="searchInput" placeholder="Пошук за ніком..." 
-                    class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500 w-48 sm:w-64">
-                
-                <select id="filterSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none">
-                    <option value="debtors">Тільки боржники</option>
-                    <option value="all">Усі гравці</option>
-                </select>
-            </div>
-
-            <button id="copyBtn" onclick="copyDebtorsList()" 
-                class="bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
-                📋 Скопіювати боржників для чату
-            </button>
-        </div>
-
         <!-- Stats Overview -->
         <div id="statsGrid" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
@@ -77,6 +59,36 @@
             </div>
         </div>
 
+        <!-- Top 5 Hunters Section -->
+        <div id="top5Section" class="hidden bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+                <h2 class="text-lg font-bold text-amber-400 flex items-center gap-2">🏆 ТОП-5 Мисливців Тижня</h2>
+                <button id="copyTop5Btn" onclick="copyTop5List()" 
+                    class="bg-amber-600 hover:bg-amber-500 text-slate-900 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors">
+                    📋 Скопіювати ТОП-5
+                </button>
+            </div>
+            <div id="top5List" class="grid grid-cols-1 sm:grid-cols-5 gap-3"></div>
+        </div>
+
+        <!-- Filters & Actions Panel -->
+        <div id="actionsPanel" class="hidden bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <input type="text" id="searchInput" placeholder="Пошук за ніком..." 
+                    class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500 w-48 sm:w-64">
+                
+                <select id="filterSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none">
+                    <option value="debtors">Тільки боржники</option>
+                    <option value="all">Усі гравці</option>
+                </select>
+            </div>
+
+            <button id="copyBtn" onclick="copyDebtorsList()" 
+                class="bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                📋 Скопіювати боржників для чату
+            </button>
+        </div>
+
         <!-- Table -->
         <div id="tableContainer" class="hidden bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
             <div class="overflow-x-auto">
@@ -85,6 +97,7 @@
                         <tr>
                             <th class="px-4 py-3">Нікнейм</th>
                             <th class="px-4 py-3 text-center">Очки (Hunt)</th>
+                            <th class="px-4 py-3 text-center">% Норми</th>
                             <th class="px-4 py-3 text-center">Дефіцит</th>
                             <th class="px-4 py-3 text-center">Статус</th>
                         </tr>
@@ -115,21 +128,50 @@
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 
-                const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 
-                parsedData = rawJson.map(row => {
-                    const keys = Object.keys(row);
-                    const nameKey = keys.find(k => k.trim().toLowerCase() === 'user name') || keys[2];
-                    const pointsKey = keys.find(k => k.trim().toLowerCase() === 'points (hunt)') || keys[13];
+                if (rows.length < 2) return;
 
-                    return {
-                        name: row[nameKey] ? String(row[nameKey]).trim() : "",
-                        points: parseFloat(row[pointsKey]) || 0
-                    };
-                }).filter(item => item.name && !item.name.toLowerCase().includes('total'));
+                let nameIdx = -1;
+                let pointsIdx = -1;
+
+                for (let r = 0; r < Math.min(rows.length, 5); r++) {
+                    const row = rows[r];
+                    for (let c = 0; c < row.length; c++) {
+                        const val = String(row[c]).trim().toLowerCase();
+                        if (val === 'user name') nameIdx = c;
+                        if (val === 'points (hunt)' || val.includes('points (hunt)')) pointsIdx = c;
+                    }
+                }
+
+                if (nameIdx === -1) nameIdx = 2;
+                if (pointsIdx === -1) pointsIdx = 13;
+
+                parsedData = [];
+
+                for (let i = 0; i < rows.length; i++) {
+                    const row = rows[i];
+                    if (!row || row.length === 0) continue;
+
+                    const rawName = String(row[nameIdx] || "").trim();
+                    const rawPoints = parseFloat(row[pointsIdx]);
+
+                    if (!rawName || 
+                        rawName.toLowerCase() === 'user name' || 
+                        rawName.toLowerCase().includes('total') || 
+                        isNaN(rawPoints) && rawName.toLowerCase().includes('points')) {
+                        continue;
+                    }
+
+                    parsedData.push({
+                        name: rawName,
+                        points: isNaN(rawPoints) ? 0 : rawPoints
+                    });
+                }
 
                 document.getElementById('actionsPanel').classList.remove('hidden');
                 document.getElementById('statsGrid').classList.remove('hidden');
+                document.getElementById('top5Section').classList.remove('hidden');
                 document.getElementById('tableContainer').classList.remove('hidden');
 
                 renderData();
@@ -140,7 +182,7 @@
         function renderData() {
             if (!parsedData.length) return;
 
-            const norm = parseFloat(document.getElementById('normInput').value) || 0;
+            const norm = parseFloat(document.getElementById('normInput').value) || 1;
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             const filterMode = document.getElementById('filterSelect').value;
 
@@ -150,11 +192,12 @@
             const processed = parsedData.map(player => {
                 const isDebtor = player.points < norm;
                 const deficit = isDebtor ? norm - player.points : 0;
+                const percent = Math.round((player.points / norm) * 100);
                 
                 if (isDebtor) debtorsCount++;
                 else successCount++;
 
-                return { ...player, isDebtor, deficit };
+                return { ...player, isDebtor, deficit, percent };
             });
 
             // Update Stats
@@ -163,7 +206,21 @@
             document.getElementById('statDebtors').innerText = debtorsCount;
             document.getElementById('statPercent').innerText = processed.length ? Math.round((successCount / processed.length) * 100) + '%' : '0%';
 
-            // Filter for display
+            // Render Top 5
+            const top5 = [...processed].sort((a, b) => b.points - a.points).slice(0, 5);
+            const top5Container = document.getElementById('top5List');
+            
+            const medalEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+            top5Container.innerHTML = top5.map((p, idx) => `
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 text-center flex flex-col justify-between">
+                    <span class="text-xl mb-1">${medalEmojis[idx]}</span>
+                    <p class="font-bold text-amber-300 text-sm truncate">${escapeHtml(p.name)}</p>
+                    <p class="text-emerald-400 font-extrabold text-base mt-1">${p.percent}%</p>
+                    <p class="text-slate-400 text-xs">${p.points} очк.</p>
+                </div>
+            `).join('');
+
+            // Filter for display table
             let filtered = processed.filter(p => p.name.toLowerCase().includes(searchTerm));
             if (filterMode === 'debtors') {
                 filtered = filtered.filter(p => p.isDebtor);
@@ -177,6 +234,7 @@
                 <tr class="hover:bg-slate-700/30 transition-colors">
                     <td class="px-4 py-3 font-medium text-white">${escapeHtml(p.name)}</td>
                     <td class="px-4 py-3 text-center font-bold ${p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.points}</td>
+                    <td class="px-4 py-3 text-center font-semibold text-amber-300">${p.percent}%</td>
                     <td class="px-4 py-3 text-center text-slate-400">${p.deficit > 0 ? '-' + p.deficit : '0'}</td>
                     <td class="px-4 py-3 text-center">
                         ${p.isDebtor 
@@ -188,9 +246,9 @@
         }
 
         function copyDebtorsList() {
-            const norm = parseFloat(document.getElementById('normInput').value) || 0;
+            const norm = parseFloat(document.getElementById('normInput').value) || 1;
             const debtors = parsedData
-                .map(p => ({ ...p, deficit: norm - p.points }))
+                .map(p => ({ ...p, deficit: norm - p.points, percent: Math.round((p.points / norm) * 100) }))
                 .filter(p => p.points < norm)
                 .sort((a, b) => a.points - b.points);
 
@@ -202,19 +260,41 @@
             let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
             text += `----------------------------------\n`;
             debtors.forEach((d, i) => {
-                text += `${i + 1}. ${d.name} — ${d.points}/${norm} (не вистачає: ${d.deficit})\n`;
+                text += `${i + 1}. ${d.name} — ${d.percent}% (${d.points}/${norm}, не вистачає: ${d.deficit})\n`;
             });
             text += `----------------------------------\n`;
             text += `Всього боржників: ${debtors.length} осіб.`;
 
+            copyToClipboard(text, 'copyBtn', '📋 Скопіювати боржників для чату');
+        }
+
+        function copyTop5List() {
+            const norm = parseFloat(document.getElementById('normInput').value) || 1;
+            const top5 = [...parsedData]
+                .map(p => ({ ...p, percent: Math.round((p.points / norm) * 100) }))
+                .sort((a, b) => b.points - a.points)
+                .slice(0, 5);
+
+            if (!top5.length) return;
+
+            let text = `🏆 *ТОП-5 МИСЛИВЦІВ ТИЖНЯ*\n`;
+            text += `----------------------------------\n`;
+            const medalEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+            top5.forEach((p, i) => {
+                text += `${medalEmojis[i]} ${p.name} – ${p.percent}%\n`;
+            });
+            text += `----------------------------------\n`;
+            text += `Вітаємо найкращих мисливців! 👏🎉`;
+
+            copyToClipboard(text, 'copyTop5Btn', '📋 Скопіювати ТОП-5');
+        }
+
+        function copyToClipboard(text, btnId, defaultText) {
             navigator.clipboard.writeText(text).then(() => {
-                const btn = document.getElementById('copyBtn');
-                const origText = btn.innerHTML;
-                btn.innerHTML = '✅ Скопійовано!';
-                btn.classList.replace('bg-rose-600', 'bg-emerald-600');
+                const btn = document.getElementById(btnId);
+                btn.innerText = '✅ Скопійовано!';
                 setTimeout(() => {
-                    btn.innerHTML = origText;
-                    btn.classList.replace('bg-emerald-600', 'bg-rose-600');
+                    btn.innerText = defaultText;
                 }, 2000);
             });
         }
