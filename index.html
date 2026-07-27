@@ -17,7 +17,7 @@
         <header class="border-b border-slate-700 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
                 <h1 class="text-2xl md:text-3xl font-bold text-amber-400">🛡️ Lords Mobile — Полювання</h1>
-                <p class="text-slate-400 text-sm">Перевірка норми монстрів та корегування балів</p>
+                <p class="text-slate-400 text-sm">Перевірка норми монстрів та керування боржниками</p>
             </div>
             <span class="bg-slate-800 text-slate-300 text-xs px-3 py-1.5 rounded-full border border-slate-700">Client-Side (100% Безпечно)</span>
         </header>
@@ -39,21 +39,10 @@
             </div>
         </div>
 
-        <!-- Monster Scoring Rules -->
-        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-4 text-xs sm:text-sm text-slate-300">
-            <span class="font-semibold text-amber-400">⚖️ Система нарахування:</span>
-            <div class="flex flex-wrap gap-3">
-                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L2 = <b>1</b> бал</span>
-                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L3 = <b>3</b> бали</span>
-                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L4 = <b>7</b> балів</span>
-                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L5 = <b>10</b> балів</span>
-            </div>
-        </div>
-
         <!-- Stats Overview -->
         <div id="statsGrid" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
-                <p class="text-slate-400 text-xs">Всього гравців</p>
+                <p class="text-slate-400 text-xs">Активних гравців</p>
                 <p id="statTotal" class="text-xl font-bold text-slate-100">0</p>
             </div>
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
@@ -91,6 +80,7 @@
                 <select id="filterSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none">
                     <option value="all">Усі гравці</option>
                     <option value="debtors">Тільки боржники</option>
+                    <option value="excluded">Виключені</option>
                 </select>
             </div>
 
@@ -107,12 +97,12 @@
                     <thead class="bg-slate-900 text-slate-400 uppercase text-xs border-b border-slate-700">
                         <tr>
                             <th class="px-4 py-3">Нікнейм</th>
-                            <th class="px-4 py-3 text-center">Бали (L2..L5)</th>
-                            <th class="px-4 py-3 text-center">Коррегування</th>
+                            <th class="px-4 py-3 text-center">Корегування</th>
                             <th class="px-4 py-3 text-center">Разом балів</th>
                             <th class="px-4 py-3 text-center">% Норми</th>
                             <th class="px-4 py-3 text-center">Дефіцит</th>
                             <th class="px-4 py-3 text-center">Статус</th>
+                            <th class="px-4 py-3 text-center">Дія</th>
                         </tr>
                     </thead>
                     <tbody id="tableBody" class="divide-y divide-slate-700/50"></tbody>
@@ -124,7 +114,8 @@
 
     <script>
         let parsedData = [];
-        let manualAdjustments = {}; // { player_index: adjustment_value }
+        let manualAdjustments = {}; // { id: value }
+        let excludedPlayers = new Set(); // Set of player ids
 
         document.getElementById('excelFile').addEventListener('change', handleFile);
         document.getElementById('normInput').addEventListener('input', renderData);
@@ -146,26 +137,26 @@
                 if (rawRows.length < 2) return;
 
                 let nameColIdx = 1; // B
-                let l2Idx = 9;      // J (L2 Hunt)
-                let l3Idx = 10;     // K (L3 Hunt)
-                let l4Idx = 11;     // L (L4 Hunt)
-                let l5Idx = 12;     // M (L5 Hunt)
+                let l2Idx = 9;      // J
+                let l3Idx = 10;     // K
+                let l4Idx = 11;     // L
+                let l5Idx = 12;     // M
 
-                // Динамічний пошук за назвами колонок
                 for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
                     for (let c = 0; c < row.length; c++) {
                         const cellVal = String(row[c]).trim().toLowerCase();
                         if (cellVal === 'user name' || cellVal === 'name') nameColIdx = c;
-                        if (cellVal.includes('l2 (hunt)') || cellVal === 'l2 (hunt)') l2Idx = c;
-                        if (cellVal.includes('l3 (hunt)') || cellVal === 'l3 (hunt)') l3Idx = c;
-                        if (cellVal.includes('l4 (hunt)') || cellVal === 'l4 (hunt)') l4Idx = c;
-                        if (cellVal.includes('l5 (hunt)') || cellVal === 'l5 (hunt)') l5Idx = c;
+                        if (cellVal.includes('l2 (hunt)')) l2Idx = c;
+                        if (cellVal.includes('l3 (hunt)')) l3Idx = c;
+                        if (cellVal.includes('l4 (hunt)')) l4Idx = c;
+                        if (cellVal.includes('l5 (hunt)')) l5Idx = c;
                     }
                 }
 
                 parsedData = [];
                 manualAdjustments = {};
+                excludedPlayers.clear();
 
                 for (let i = 0; i < rawRows.length; i++) {
                     const row = rawRows[i];
@@ -186,14 +177,12 @@
                     const l4 = parseFloat(row[l4Idx]) || 0;
                     const l5 = parseFloat(row[l5Idx]) || 0;
 
-                    // Розрахунок балів: L2*1 + L3*3 + L4*7 + L5*10
                     const basePoints = (l2 * 1) + (l3 * 3) + (l4 * 7) + (l5 * 10);
 
                     parsedData.push({
                         id: parsedData.length,
                         name: rawName,
-                        basePoints: basePoints,
-                        l2: l2, l3: l3, l4: l4, l5: l5
+                        basePoints: basePoints
                     });
                 }
 
@@ -212,17 +201,27 @@
             renderData();
         }
 
+        function toggleExclude(playerId) {
+            if (excludedPlayers.has(playerId)) {
+                excludedPlayers.delete(playerId);
+            } else {
+                excludedPlayers.add(playerId);
+            }
+            renderData();
+        }
+
         function getProcessedData() {
             const norm = parseFloat(document.getElementById('normInput').value) || 1;
             
             return parsedData.map(player => {
                 const adj = manualAdjustments[player.id] || 0;
-                const totalPoints = Math.max(0, player.basePoints + adj); // Не дозволяємо від'ємні бали
-                const isDebtor = totalPoints < norm;
+                const totalPoints = Math.max(0, player.basePoints + adj);
+                const isExcluded = excludedPlayers.has(player.id);
+                const isDebtor = !isExcluded && totalPoints < norm;
                 const deficit = isDebtor ? norm - totalPoints : 0;
                 const percent = Math.round((totalPoints / norm) * 100);
 
-                return { ...player, adj, totalPoints, isDebtor, deficit, percent };
+                return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
             });
         }
 
@@ -233,22 +232,23 @@
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             const filterMode = document.getElementById('filterSelect').value;
 
+            const activePlayers = processed.filter(p => !p.isExcluded);
             let debtorsCount = 0;
             let successCount = 0;
 
-            processed.forEach(p => {
+            activePlayers.forEach(p => {
                 if (p.isDebtor) debtorsCount++;
                 else successCount++;
             });
 
             // Update Stats
-            document.getElementById('statTotal').innerText = processed.length;
+            document.getElementById('statTotal').innerText = activePlayers.length;
             document.getElementById('statSuccess').innerText = successCount;
             document.getElementById('statDebtors').innerText = debtorsCount;
-            document.getElementById('statPercent').innerText = processed.length ? Math.round((successCount / processed.length) * 100) + '%' : '0%';
+            document.getElementById('statPercent').innerText = activePlayers.length ? Math.round((successCount / activePlayers.length) * 100) + '%' : '0%';
 
             // Render Top 5
-            const top5 = [...processed].sort((a, b) => b.totalPoints - a.totalPoints).slice(0, 5);
+            const top5 = [...activePlayers].sort((a, b) => b.totalPoints - a.totalPoints).slice(0, 5);
             const top5Container = document.getElementById('top5List');
             const medalEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
 
@@ -265,6 +265,8 @@
             let filtered = processed.filter(p => p.name.toLowerCase().includes(searchTerm));
             if (filterMode === 'debtors') {
                 filtered = filtered.filter(p => p.isDebtor);
+            } else if (filterMode === 'excluded') {
+                filtered = filtered.filter(p => p.isExcluded);
             }
 
             filtered.sort((a, b) => a.totalPoints - b.totalPoints);
@@ -272,21 +274,29 @@
             // Render Table Rows
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = filtered.map(p => `
-                <tr class="hover:bg-slate-700/30 transition-colors">
-                    <td class="px-4 py-3 font-medium text-white">${escapeHtml(p.name)}</td>
-                    <td class="px-4 py-3 text-center text-slate-400">${p.basePoints}</td>
+                <tr class="hover:bg-slate-700/30 transition-colors ${p.isExcluded ? 'opacity-50 bg-slate-900/40' : ''}">
+                    <td class="px-4 py-3 font-medium text-white ${p.isExcluded ? 'line-through text-slate-500' : ''}">${escapeHtml(p.name)}</td>
                     <td class="px-4 py-3 text-center">
                         <input type="number" value="${p.adj !== 0 ? p.adj : ''}" placeholder="0" 
+                            ${p.isExcluded ? 'disabled' : ''}
                             onchange="updateAdjustment(${p.id}, this.value)"
-                            class="w-20 bg-slate-900 border ${p.adj < 0 ? 'border-rose-500 text-rose-400' : p.adj > 0 ? 'border-emerald-500 text-emerald-400' : 'border-slate-700 text-slate-300'} rounded text-center px-2 py-1 text-xs focus:outline-none focus:border-amber-500">
+                            class="w-20 bg-slate-900 border ${p.adj < 0 ? 'border-rose-500 text-rose-400' : p.adj > 0 ? 'border-emerald-500 text-emerald-400' : 'border-slate-700 text-slate-300'} rounded text-center px-2 py-1 text-xs focus:outline-none focus:border-amber-500 disabled:opacity-50">
                     </td>
-                    <td class="px-4 py-3 text-center font-bold ${p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.totalPoints}</td>
-                    <td class="px-4 py-3 text-center font-semibold text-amber-300">${p.percent}%</td>
+                    <td class="px-4 py-3 text-center font-bold ${p.isExcluded ? 'text-slate-500' : p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.totalPoints}</td>
+                    <td class="px-4 py-3 text-center font-semibold ${p.isExcluded ? 'text-slate-500' : 'text-amber-300'}">${p.percent}%</td>
                     <td class="px-4 py-3 text-center text-slate-400">${p.deficit > 0 ? '-' + p.deficit : '0'}</td>
                     <td class="px-4 py-3 text-center">
-                        ${p.isDebtor 
+                        ${p.isExcluded 
+                            ? `<span class="bg-slate-700/30 text-slate-400 border border-slate-600 text-xs px-2.5 py-1 rounded-full font-semibold">Виключено</span>`
+                            : p.isDebtor 
                             ? `<span class="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs px-2.5 py-1 rounded-full font-semibold">Боржник</span>` 
                             : `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2.5 py-1 rounded-full font-semibold">ОК</span>`}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="toggleExclude(${p.id})" 
+                            class="text-xs px-2.5 py-1 rounded border transition-colors ${p.isExcluded ? 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' : 'bg-rose-950/40 border-rose-800/60 text-rose-300 hover:bg-rose-900/60'}">
+                            ${p.isExcluded ? '↩️ Відновити' : '🚫 Виключити'}
+                        </button>
                     </td>
                 </tr>
             `).join('');
@@ -318,6 +328,7 @@
         function copyTop5List() {
             const processed = getProcessedData();
             const top5 = processed
+                .filter(p => !p.isExcluded)
                 .sort((a, b) => b.totalPoints - a.totalPoints)
                 .slice(0, 5);
 
