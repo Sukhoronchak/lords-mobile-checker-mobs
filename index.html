@@ -220,6 +220,8 @@
                 const totalPoints = Math.max(0, player.basePoints + adj);
                 const isExcluded = excludedPlayers.has(player.id);
                 const isDebtor = !isExcluded && totalPoints < norm;
+                
+                // Чисте додатне число боргу
                 const deficit = isDebtor ? norm - totalPoints : 0;
                 
                 const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
@@ -287,7 +289,7 @@
                     </td>
                     <td class="px-4 py-3 text-center font-bold ${p.isExcluded ? 'text-slate-500' : p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.totalPoints}</td>
                     <td class="px-4 py-3 text-center font-semibold ${p.isExcluded ? 'text-slate-500' : 'text-amber-300'}">${p.percent}%</td>
-                    <td class="px-4 py-3 text-center text-slate-400">${p.deficit > 0 ? '-' + p.deficit : '0'}</td>
+                    <td class="px-4 py-3 text-center font-bold ${p.deficit > 0 ? 'text-rose-400' : 'text-slate-500'}">${p.deficit}</td>
                     <td class="px-4 py-3 text-center">
                         ${p.isExcluded 
                             ? `<span class="bg-slate-700/30 text-slate-400 border border-slate-600 text-xs px-2.5 py-1 rounded-full font-semibold">Виключено</span>`
@@ -320,7 +322,7 @@
             let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
             text += `----------------------------------\n`;
             debtors.forEach((d, i) => {
-                text += `${i + 1}. ${d.name} — ${d.percent}% (${d.totalPoints}/${norm}, не вистачає: ${d.deficit})\n`;
+                text += `${i + 1}. ${d.name} — ${d.percent}% (${d.totalPoints}/${norm}, борг: ${d.deficit})\n`;
             });
             text += `----------------------------------\n`;
             text += `Всього боржників: ${debtors.length} осіб.`;
