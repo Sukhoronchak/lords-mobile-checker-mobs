@@ -33,7 +33,7 @@
 
             <!-- Target Norm -->
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (для рохрахунку дефіциту)</label>
+                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (для розрахунку боргу)</label>
                 <input type="number" id="normInput" value="42" min="1" 
                     class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold focus:outline-none focus:border-amber-500">
             </div>
@@ -99,8 +99,8 @@
                             <th class="px-4 py-3">Нікнейм</th>
                             <th class="px-4 py-3 text-center">Корегування</th>
                             <th class="px-4 py-3 text-center">Разом балів</th>
-                            <th class="px-4 py-3 text-center">% Норми (з Т)</th>
-                            <th class="px-4 py-3 text-center">Дефіцит</th>
+                            <th class="px-4 py-3 text-center">% Норми</th>
+                            <th class="px-4 py-3 text-center">Борг</th>
                             <th class="px-4 py-3 text-center">Статус</th>
                             <th class="px-4 py-3 text-center">Дія</th>
                         </tr>
@@ -114,8 +114,8 @@
 
     <script>
         let parsedData = [];
-        let manualAdjustments = {}; // { id: value }
-        let excludedPlayers = new Set(); // Set of player ids
+        let manualAdjustments = {}; 
+        let excludedPlayers = new Set(); 
 
         document.getElementById('excelFile').addEventListener('change', handleFile);
         document.getElementById('normInput').addEventListener('input', renderData);
@@ -140,7 +140,6 @@
                 let pointsColIdx = 18; // Стовпець S (Points / Hunt)
                 let percentColIdx = 19; // Стовпець T (Goal Percentage / Points (Hunt) %)
 
-                // Динамічний пошук за назвами колонок
                 for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
                     for (let c = 0; c < row.length; c++) {
@@ -168,14 +167,11 @@
                         continue;
                     }
 
-                    // Зчитуємо очки зі стовпця S (18 індекс)
                     const basePoints = parseFloat(row[pointsColIdx]) || 0;
 
-                    // Зчитуємо відсоток зі стовпця T (19 індекс)
                     let rawPercentStr = String(row[percentColIdx] || "").replace('%', '').trim();
                     let filePercent = parseFloat(rawPercentStr);
                     
-                    // Якщо у файлі дробове значення типу 1.12, переводимо в 112%
                     if (!isNaN(filePercent) && filePercent > 0 && filePercent <= 5 && rawPercentStr.includes('.')) {
                         filePercent = Math.round(filePercent * 100);
                     } else if (isNaN(filePercent)) {
@@ -226,7 +222,6 @@
                 const isDebtor = !isExcluded && totalPoints < norm;
                 const deficit = isDebtor ? norm - totalPoints : 0;
                 
-                // Якщо є ручне корегування балів, перераховуємо відсоток, інакше беремо прямо зі стовпчика T
                 const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
 
                 return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
