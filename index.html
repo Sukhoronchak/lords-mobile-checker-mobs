@@ -128,38 +128,62 @@
                 const sheetName = workbook.SheetNames[0];
                 const worksheet = workbook.Sheets[sheetName];
                 
-                // Зчитуємо масив рядків
                 const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
-                
                 if (rawRows.length < 2) return;
 
-                // Чітко зафіксовані колонки:
-                // Стовпчик B = User Name (індекс 1 в 0-based масиві)
-                // Стовпчик N = Points (Hunt) (індекс 13 в 0-based масиві)
-                const nameColIdx = 1;
-                const pointsColIdx = 13;
+                let nameColIdx = -1;
+                let pointsColIdx = -1;
+
+                // Знаходимо рядки з заголовками
+                for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+                    const row = rawRows[r];
+                    for (let c = 0; c < row.length; c++) {
+                        const cellVal = String(row[c]).trim().toLowerCase();
+                        if (cellVal === 'user name' || cellVal === 'name') {
+                            nameColIdx = c;
+                        }
+                        if (cellVal === 'points (hunt)' || (cellVal.includes('points') && cellVal.includes('hunt'))) {
+                            pointsColIdx = c;
+                        }
+                    }
+                }
+
+                // Фоллбек значення, якщо в заголовках були об'єднані комірки
+                if (nameColIdx === -1) nameColIdx = 2; // Колонка C (0-based) або B
+                if (pointsColIdx === -1) {
+                    // Шукаємо колонку з назвою Points (Hunt) за точним текстом в перших двох рядках
+                    for (let c = 0; c < rawRows[0].length; c++) {
+                        const headerStr = String(rawRows[0][c] || "") + " " + String(rawRows[1][c] || "");
+                        if (headerStr.toLowerCase().includes('points') && headerStr.toLowerCase().includes('hunt')) {
+                            pointsColIdx = c;
+                            break;
+                        }
+                    }
+                    if (pointsColIdx === -1) pointsColIdx = 13; // Колонка N (13)
+                }
 
                 parsedData = [];
 
                 for (let i = 0; i < rawRows.length; i++) {
                     const row = rawRows[i];
-                    if (!row || row.length <= pointsColIdx) continue;
+                    if (!row || row.length <= Math.max(nameColIdx, pointsColIdx)) continue;
 
                     const rawName = String(row[nameColIdx] || "").trim();
-                    const rawPoints = parseFloat(row[pointsColIdx]);
+                    const rawPointsStr = String(row[pointsColIdx] || "").replace(',', '.').trim();
+                    const rawPoints = parseFloat(rawPointsStr);
 
-                    // Пропускаємо шапки, підсумкові рядки та порожні комірки
+                    // Ігноруємо непотрібні рядки та Total
                     if (!rawName || 
                         rawName.toLowerCase() === 'user name' || 
+                        rawName.toLowerCase() === 'name' ||
                         rawName.toLowerCase().includes('total') || 
-                        rawName.toLowerCase().includes('user id') ||
-                        isNaN(rawPoints)) {
+                        rawName.toLowerCase().includes('user id')) {
                         continue;
                     }
 
                     parsedData.push({
                         name: rawName,
-                        points: rawPoints
+                        points: isNaN(rawPoints) ? 0 : rawPoints
                     });
                 }
 
