@@ -17,7 +17,7 @@
         <header class="border-b border-slate-700 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
                 <h1 class="text-2xl md:text-3xl font-bold text-amber-400">🛡️ Lords Mobile — Полювання</h1>
-                <p class="text-slate-400 text-sm">Перевірка виконання норми монстрів для R4/R5</p>
+                <p class="text-slate-400 text-sm">Перевірка норми монстрів та корегування балів</p>
             </div>
             <span class="bg-slate-800 text-slate-300 text-xs px-3 py-1.5 rounded-full border border-slate-700">Client-Side (100% Безпечно)</span>
         </header>
@@ -33,9 +33,20 @@
 
             <!-- Target Norm -->
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (Points/Hunt)</label>
+                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (тижнева)</label>
                 <input type="number" id="normInput" value="42" min="1" 
                     class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold focus:outline-none focus:border-amber-500">
+            </div>
+        </div>
+
+        <!-- Monster Scoring Rules -->
+        <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap items-center justify-between gap-4 text-xs sm:text-sm text-slate-300">
+            <span class="font-semibold text-amber-400">⚖️ Система нарахування:</span>
+            <div class="flex flex-wrap gap-3">
+                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L2 = <b>1</b> бал</span>
+                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L3 = <b>3</b> бали</span>
+                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L4 = <b>7</b> балів</span>
+                <span class="bg-slate-900 px-2.5 py-1 rounded border border-slate-700">L5 = <b>10</b> балів</span>
             </div>
         </div>
 
@@ -78,8 +89,8 @@
                     class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500 w-48 sm:w-64">
                 
                 <select id="filterSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none">
-                    <option value="debtors">Тільки боржники</option>
                     <option value="all">Усі гравці</option>
+                    <option value="debtors">Тільки боржники</option>
                 </select>
             </div>
 
@@ -96,7 +107,9 @@
                     <thead class="bg-slate-900 text-slate-400 uppercase text-xs border-b border-slate-700">
                         <tr>
                             <th class="px-4 py-3">Нікнейм</th>
-                            <th class="px-4 py-3 text-center">Очки (Hunt)</th>
+                            <th class="px-4 py-3 text-center">Бали (L2..L5)</th>
+                            <th class="px-4 py-3 text-center">Коррегування</th>
+                            <th class="px-4 py-3 text-center">Разом балів</th>
                             <th class="px-4 py-3 text-center">% Норми</th>
                             <th class="px-4 py-3 text-center">Дефіцит</th>
                             <th class="px-4 py-3 text-center">Статус</th>
@@ -111,6 +124,7 @@
 
     <script>
         let parsedData = [];
+        let manualAdjustments = {}; // { player_index: adjustment_value }
 
         document.getElementById('excelFile').addEventListener('change', handleFile);
         document.getElementById('normInput').addEventListener('input', renderData);
@@ -131,48 +145,34 @@
                 const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 if (rawRows.length < 2) return;
 
-                let nameColIdx = -1;
-                let pointsColIdx = -1;
+                let nameColIdx = 1; // B
+                let l2Idx = 9;      // J (L2 Hunt)
+                let l3Idx = 10;     // K (L3 Hunt)
+                let l4Idx = 11;     // L (L4 Hunt)
+                let l5Idx = 12;     // M (L5 Hunt)
 
-                // Знаходимо рядки з заголовками
-                for (let r = 0; r < Math.min(rawRows.length, 10); r++) {
+                // Динамічний пошук за назвами колонок
+                for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
                     for (let c = 0; c < row.length; c++) {
                         const cellVal = String(row[c]).trim().toLowerCase();
-                        if (cellVal === 'user name' || cellVal === 'name') {
-                            nameColIdx = c;
-                        }
-                        if (cellVal === 'points (hunt)' || (cellVal.includes('points') && cellVal.includes('hunt'))) {
-                            pointsColIdx = c;
-                        }
+                        if (cellVal === 'user name' || cellVal === 'name') nameColIdx = c;
+                        if (cellVal.includes('l2 (hunt)') || cellVal === 'l2 (hunt)') l2Idx = c;
+                        if (cellVal.includes('l3 (hunt)') || cellVal === 'l3 (hunt)') l3Idx = c;
+                        if (cellVal.includes('l4 (hunt)') || cellVal === 'l4 (hunt)') l4Idx = c;
+                        if (cellVal.includes('l5 (hunt)') || cellVal === 'l5 (hunt)') l5Idx = c;
                     }
-                }
-
-                // Фоллбек значення, якщо в заголовках були об'єднані комірки
-                if (nameColIdx === -1) nameColIdx = 2; // Колонка C (0-based) або B
-                if (pointsColIdx === -1) {
-                    // Шукаємо колонку з назвою Points (Hunt) за точним текстом в перших двох рядках
-                    for (let c = 0; c < rawRows[0].length; c++) {
-                        const headerStr = String(rawRows[0][c] || "") + " " + String(rawRows[1][c] || "");
-                        if (headerStr.toLowerCase().includes('points') && headerStr.toLowerCase().includes('hunt')) {
-                            pointsColIdx = c;
-                            break;
-                        }
-                    }
-                    if (pointsColIdx === -1) pointsColIdx = 13; // Колонка N (13)
                 }
 
                 parsedData = [];
+                manualAdjustments = {};
 
                 for (let i = 0; i < rawRows.length; i++) {
                     const row = rawRows[i];
-                    if (!row || row.length <= Math.max(nameColIdx, pointsColIdx)) continue;
+                    if (!row || row.length <= nameColIdx) continue;
 
                     const rawName = String(row[nameColIdx] || "").trim();
-                    const rawPointsStr = String(row[pointsColIdx] || "").replace(',', '.').trim();
-                    const rawPoints = parseFloat(rawPointsStr);
-
-                    // Ігноруємо непотрібні рядки та Total
+                    
                     if (!rawName || 
                         rawName.toLowerCase() === 'user name' || 
                         rawName.toLowerCase() === 'name' ||
@@ -181,9 +181,19 @@
                         continue;
                     }
 
+                    const l2 = parseFloat(row[l2Idx]) || 0;
+                    const l3 = parseFloat(row[l3Idx]) || 0;
+                    const l4 = parseFloat(row[l4Idx]) || 0;
+                    const l5 = parseFloat(row[l5Idx]) || 0;
+
+                    // Розрахунок балів: L2*1 + L3*3 + L4*7 + L5*10
+                    const basePoints = (l2 * 1) + (l3 * 3) + (l4 * 7) + (l5 * 10);
+
                     parsedData.push({
+                        id: parsedData.length,
                         name: rawName,
-                        points: isNaN(rawPoints) ? 0 : rawPoints
+                        basePoints: basePoints,
+                        l2: l2, l3: l3, l4: l4, l5: l5
                     });
                 }
 
@@ -197,25 +207,38 @@
             reader.readAsArrayBuffer(file);
         }
 
+        function updateAdjustment(playerId, value) {
+            manualAdjustments[playerId] = parseFloat(value) || 0;
+            renderData();
+        }
+
+        function getProcessedData() {
+            const norm = parseFloat(document.getElementById('normInput').value) || 1;
+            
+            return parsedData.map(player => {
+                const adj = manualAdjustments[player.id] || 0;
+                const totalPoints = Math.max(0, player.basePoints + adj); // Не дозволяємо від'ємні бали
+                const isDebtor = totalPoints < norm;
+                const deficit = isDebtor ? norm - totalPoints : 0;
+                const percent = Math.round((totalPoints / norm) * 100);
+
+                return { ...player, adj, totalPoints, isDebtor, deficit, percent };
+            });
+        }
+
         function renderData() {
             if (!parsedData.length) return;
 
-            const norm = parseFloat(document.getElementById('normInput').value) || 1;
+            const processed = getProcessedData();
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
             const filterMode = document.getElementById('filterSelect').value;
 
             let debtorsCount = 0;
             let successCount = 0;
 
-            const processed = parsedData.map(player => {
-                const isDebtor = player.points < norm;
-                const deficit = isDebtor ? norm - player.points : 0;
-                const percent = Math.round((player.points / norm) * 100);
-                
-                if (isDebtor) debtorsCount++;
+            processed.forEach(p => {
+                if (p.isDebtor) debtorsCount++;
                 else successCount++;
-
-                return { ...player, isDebtor, deficit, percent };
             });
 
             // Update Stats
@@ -225,16 +248,16 @@
             document.getElementById('statPercent').innerText = processed.length ? Math.round((successCount / processed.length) * 100) + '%' : '0%';
 
             // Render Top 5
-            const top5 = [...processed].sort((a, b) => b.points - a.points).slice(0, 5);
+            const top5 = [...processed].sort((a, b) => b.totalPoints - a.totalPoints).slice(0, 5);
             const top5Container = document.getElementById('top5List');
-            
             const medalEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+
             top5Container.innerHTML = top5.map((p, idx) => `
                 <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 text-center flex flex-col justify-between">
                     <span class="text-xl mb-1">${medalEmojis[idx]}</span>
-                    <p class="font-bold text-amber-300 text-sm truncate">${escapeHtml(p.name)}</p>
+                    <p class="font-bold text-amber-300 text-sm truncate" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</p>
                     <p class="text-emerald-400 font-extrabold text-base mt-1">${p.percent}%</p>
-                    <p class="text-slate-400 text-xs">${p.points} очк.</p>
+                    <p class="text-slate-400 text-xs">${p.totalPoints} балів</p>
                 </div>
             `).join('');
 
@@ -244,14 +267,20 @@
                 filtered = filtered.filter(p => p.isDebtor);
             }
 
-            filtered.sort((a, b) => a.points - b.points);
+            filtered.sort((a, b) => a.totalPoints - b.totalPoints);
 
             // Render Table Rows
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = filtered.map(p => `
                 <tr class="hover:bg-slate-700/30 transition-colors">
                     <td class="px-4 py-3 font-medium text-white">${escapeHtml(p.name)}</td>
-                    <td class="px-4 py-3 text-center font-bold ${p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.points}</td>
+                    <td class="px-4 py-3 text-center text-slate-400">${p.basePoints}</td>
+                    <td class="px-4 py-3 text-center">
+                        <input type="number" value="${p.adj !== 0 ? p.adj : ''}" placeholder="0" 
+                            onchange="updateAdjustment(${p.id}, this.value)"
+                            class="w-20 bg-slate-900 border ${p.adj < 0 ? 'border-rose-500 text-rose-400' : p.adj > 0 ? 'border-emerald-500 text-emerald-400' : 'border-slate-700 text-slate-300'} rounded text-center px-2 py-1 text-xs focus:outline-none focus:border-amber-500">
+                    </td>
+                    <td class="px-4 py-3 text-center font-bold ${p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.totalPoints}</td>
                     <td class="px-4 py-3 text-center font-semibold text-amber-300">${p.percent}%</td>
                     <td class="px-4 py-3 text-center text-slate-400">${p.deficit > 0 ? '-' + p.deficit : '0'}</td>
                     <td class="px-4 py-3 text-center">
@@ -265,10 +294,10 @@
 
         function copyDebtorsList() {
             const norm = parseFloat(document.getElementById('normInput').value) || 1;
-            const debtors = parsedData
-                .map(p => ({ ...p, deficit: norm - p.points, percent: Math.round((p.points / norm) * 100) }))
-                .filter(p => p.points < norm)
-                .sort((a, b) => a.points - b.points);
+            const processed = getProcessedData();
+            const debtors = processed
+                .filter(p => p.isDebtor)
+                .sort((a, b) => a.totalPoints - b.totalPoints);
 
             if (!debtors.length) {
                 alert('Боржників не знайдено!');
@@ -278,7 +307,7 @@
             let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
             text += `----------------------------------\n`;
             debtors.forEach((d, i) => {
-                text += `${i + 1}. ${d.name} — ${d.percent}% (${d.points}/${norm}, не вистачає: ${d.deficit})\n`;
+                text += `${i + 1}. ${d.name} — ${d.percent}% (${d.totalPoints}/${norm}, не вистачає: ${d.deficit})\n`;
             });
             text += `----------------------------------\n`;
             text += `Всього боржників: ${debtors.length} осіб.`;
@@ -287,10 +316,9 @@
         }
 
         function copyTop5List() {
-            const norm = parseFloat(document.getElementById('normInput').value) || 1;
-            const top5 = [...parsedData]
-                .map(p => ({ ...p, percent: Math.round((p.points / norm) * 100) }))
-                .sort((a, b) => b.points - a.points)
+            const processed = getProcessedData();
+            const top5 = processed
+                .sort((a, b) => b.totalPoints - a.totalPoints)
                 .slice(0, 5);
 
             if (!top5.length) return;
