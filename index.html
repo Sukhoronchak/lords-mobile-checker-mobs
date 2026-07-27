@@ -221,9 +221,7 @@
                 const isExcluded = excludedPlayers.has(player.id);
                 const isDebtor = !isExcluded && totalPoints < norm;
                 
-                // Чисте додатне число боргу
                 const deficit = isDebtor ? norm - totalPoints : 0;
-                
                 const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
 
                 return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
@@ -321,8 +319,8 @@
 
             let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
             text += `----------------------------------\n`;
-            debtors.forEach((d, i) => {
-                text += `${i + 1}. ${d.name} — ${d.percent}% (${d.totalPoints}/${norm}, борг: ${d.deficit})\n`;
+            debtors.forEach((d) => {
+                text += `${d.name} – ${d.deficit}\n`;
             });
             text += `----------------------------------\n`;
             text += `Всього боржників: ${debtors.length} осіб.`;
