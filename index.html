@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lords Mobile — Аналіз Полювання</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (xlsx) CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
+    <div class="max-w-5xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <header class="border-b border-slate-700 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold text-amber-400">🛡️ Lords Mobile — Полювання</h1>
+                <p class="text-slate-400 text-sm">Перевірка виконання норми монстрів для R4/R5</p>
+            </div>
+            <span class="bg-slate-800 text-slate-300 text-xs px-3 py-1.5 rounded-full border border-slate-700">Client-Side (100% Безпечно)</span>
+        </header>
+
+        <!-- Control Panel -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- File Upload -->
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 md:col-span-2">
+                <label class="block text-sm font-medium text-slate-300 mb-2">Обрати .xlsx файл бота</label>
+                <input type="file" id="excelFile" accept=".xlsx, .xls" 
+                    class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-amber-500 file:text-slate-900 hover:file:bg-amber-400 cursor-pointer">
+            </div>
+
+            <!-- Target Norm -->
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (Points/Hunt)</label>
+                <input type="number" id="normInput" value="42" min="1" 
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold focus:outline-none focus:border-amber-500">
+            </div>
+        </div>
+
+        <!-- Filters & Actions Panel -->
+        <div id="actionsPanel" class="hidden bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <input type="text" id="searchInput" placeholder="Пошук за ніком..." 
+                    class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500 w-48 sm:w-64">
+                
+                <select id="filterSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none">
+                    <option value="debtors">Тільки боржники</option>
+                    <option value="all">Усі гравці</option>
+                </select>
+            </div>
+
+            <button id="copyBtn" onclick="copyDebtorsList()" 
+                class="bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                📋 Скопіювати боржників для чату
+            </button>
+        </div>
+
+        <!-- Stats Overview -->
+        <div id="statsGrid" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">Всього гравців</p>
+                <p id="statTotal" class="text-xl font-bold text-slate-100">0</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">Виконали норму</p>
+                <p id="statSuccess" class="text-xl font-bold text-emerald-400">0</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">Боржники</p>
+                <p id="statDebtors" class="text-xl font-bold text-rose-400">0</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">% Виконання</p>
+                <p id="statPercent" class="text-xl font-bold text-amber-400">0%</p>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div id="tableContainer" class="hidden bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-300">
+                    <thead class="bg-slate-900 text-slate-400 uppercase text-xs border-b border-slate-700">
+                        <tr>
+                            <th class="px-4 py-3">Нікнейм</th>
+                            <th class="px-4 py-3 text-center">Очки (Hunt)</th>
+                            <th class="px-4 py-3 text-center">Дефіцит</th>
+                            <th class="px-4 py-3 text-center">Статус</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-700/50"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let parsedData = [];
+
+        document.getElementById('excelFile').addEventListener('change', handleFile);
+        document.getElementById('normInput').addEventListener('input', renderData);
+        document.getElementById('searchInput').addEventListener('input', renderData);
+        document.getElementById('filterSelect').addEventListener('change', renderData);
+
+        function handleFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                
+                const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                
+                parsedData = rawJson.map(row => {
+                    const keys = Object.keys(row);
+                    const nameKey = keys.find(k => k.trim().toLowerCase() === 'user name') || keys[2];
+                    const pointsKey = keys.find(k => k.trim().toLowerCase() === 'points (hunt)') || keys[13];
+
+                    return {
+                        name: row[nameKey] ? String(row[nameKey]).trim() : "",
+                        points: parseFloat(row[pointsKey]) || 0
+                    };
+                }).filter(item => item.name && !item.name.toLowerCase().includes('total'));
+
+                document.getElementById('actionsPanel').classList.remove('hidden');
+                document.getElementById('statsGrid').classList.remove('hidden');
+                document.getElementById('tableContainer').classList.remove('hidden');
+
+                renderData();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function renderData() {
+            if (!parsedData.length) return;
+
+            const norm = parseFloat(document.getElementById('normInput').value) || 0;
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const filterMode = document.getElementById('filterSelect').value;
+
+            let debtorsCount = 0;
+            let successCount = 0;
+
+            const processed = parsedData.map(player => {
+                const isDebtor = player.points < norm;
+                const deficit = isDebtor ? norm - player.points : 0;
+                
+                if (isDebtor) debtorsCount++;
+                else successCount++;
+
+                return { ...player, isDebtor, deficit };
+            });
+
+            // Update Stats
+            document.getElementById('statTotal').innerText = processed.length;
+            document.getElementById('statSuccess').innerText = successCount;
+            document.getElementById('statDebtors').innerText = debtorsCount;
+            document.getElementById('statPercent').innerText = processed.length ? Math.round((successCount / processed.length) * 100) + '%' : '0%';
+
+            // Filter for display
+            let filtered = processed.filter(p => p.name.toLowerCase().includes(searchTerm));
+            if (filterMode === 'debtors') {
+                filtered = filtered.filter(p => p.isDebtor);
+            }
+
+            filtered.sort((a, b) => a.points - b.points);
+
+            // Render Table Rows
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = filtered.map(p => `
+                <tr class="hover:bg-slate-700/30 transition-colors">
+                    <td class="px-4 py-3 font-medium text-white">${escapeHtml(p.name)}</td>
+                    <td class="px-4 py-3 text-center font-bold ${p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.points}</td>
+                    <td class="px-4 py-3 text-center text-slate-400">${p.deficit > 0 ? '-' + p.deficit : '0'}</td>
+                    <td class="px-4 py-3 text-center">
+                        ${p.isDebtor 
+                            ? `<span class="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs px-2.5 py-1 rounded-full font-semibold">Боржник</span>` 
+                            : `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2.5 py-1 rounded-full font-semibold">ОК</span>`}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function copyDebtorsList() {
+            const norm = parseFloat(document.getElementById('normInput').value) || 0;
+            const debtors = parsedData
+                .map(p => ({ ...p, deficit: norm - p.points }))
+                .filter(p => p.points < norm)
+                .sort((a, b) => a.points - b.points);
+
+            if (!debtors.length) {
+                alert('Боржників не знайдено!');
+                return;
+            }
+
+            let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
+            text += `----------------------------------\n`;
+            debtors.forEach((d, i) => {
+                text += `${i + 1}. ${d.name} — ${d.points}/${norm} (не вистачає: ${d.deficit})\n`;
+            });
+            text += `----------------------------------\n`;
+            text += `Всього боржників: ${debtors.length} осіб.`;
+
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('copyBtn');
+                const origText = btn.innerHTML;
+                btn.innerHTML = '✅ Скопійовано!';
+                btn.classList.replace('bg-rose-600', 'bg-emerald-600');
+                setTimeout(() => {
+                    btn.innerHTML = origText;
+                    btn.classList.replace('bg-emerald-600', 'bg-rose-600');
+                }, 2000);
+            });
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+            });
+        }
+    </script>
+</body>
+</html>
