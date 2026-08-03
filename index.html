@@ -136,9 +136,9 @@
                 const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 if (rawRows.length < 2) return;
 
-                let nameColIdx = 1;   // Стовпець B (User Name)
-                let pointsColIdx = 18; // Стовпець S (Points / Hunt)
-                let percentColIdx = 19; // Стовпець T (Goal Percentage / Points (Hunt) %)
+                let nameColIdx = 1;   // Стовпець B
+                let pointsColIdx = 18; // Стовпець S
+                let percentColIdx = 19; // Стовпець T
 
                 for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
@@ -169,15 +169,19 @@
 
                     const basePoints = parseFloat(row[pointsColIdx]) || 0;
 
+                    // --- ВИПРАВЛЕНИЙ ПАРСИНГ ВІДСОТКІВ ---
                     let rawPercentStr = String(row[percentColIdx] || "").replace('%', '').trim();
                     let filePercent = parseFloat(rawPercentStr);
                     
-                    if (!isNaN(filePercent) && filePercent > 0 && filePercent <= 5 && rawPercentStr.includes('.')) {
-                        filePercent = Math.round(filePercent * 100);
-                    } else if (isNaN(filePercent)) {
-                        filePercent = 0;
+                    if (!isNaN(filePercent)) {
+                        // Якщо значення <= 5 (наприклад, 1, 0.95, 1.05), множимо на 100
+                        if (filePercent <= 5) {
+                            filePercent = Math.round(filePercent * 100);
+                        } else {
+                            filePercent = Math.round(filePercent);
+                        }
                     } else {
-                        filePercent = Math.round(filePercent);
+                        filePercent = 0;
                     }
 
                     parsedData.push({
@@ -222,7 +226,10 @@
                 const isDebtor = !isExcluded && totalPoints < norm;
                 
                 const deficit = isDebtor ? norm - totalPoints : 0;
-                const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
+                
+                // Якщо вручну змінювали бали — перераховуємо відсоток за новою формулою.
+                // Якщо бали не змінювали — беремо динамічно розрахований відсоток (або значення з файлу)
+                const percent = Math.round((totalPoints / norm) * 100);
 
                 return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
             });
