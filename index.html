@@ -1,799 +1,376 @@
-import os
-import time
-import threading
-import telebot
-from telebot import types
-from flask import Flask
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lords Mobile — Аналіз Полювання</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS (xlsx) CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
 
-TOKEN = "8858737206:AAH0pxVg_P1DAa-pYtpDqUjLrHumlEfCJBQ"
-bot = telebot.TeleBot(TOKEN)
-
-# Створення Flask-заглушки для хостингу Render
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Бот для Lords Mobile активний і працює 24/7!"
-
-def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-# Папки для скриншотів
-MONSTERS_DIR = "monsters"
-ASTRALITE_DIR = "astralite"  # Головна папка астраліту
-
-# 📊 База ресурсів
-UNIT_RESOURCES = {
-    'T1': {'Піхота': [30, 0, 30, 30, 0], 'Лучники': [30, 30, 30, 0, 0], 'Кавалерія': [30, 30, 0, 30, 0], 'Осада': [30, 30, 30, 30, 0]},
-    'T2': {'Піхота': [86, 0, 86, 86, 4], 'Лучники': [86, 86, 86, 0, 4], 'Кавалерія': [86, 86, 0, 86, 4], 'Осада': [86, 86, 86, 86, 4]},
-    'T3': {'Піхота': [150, 0, 150, 150, 10], 'Лучники': [150, 150, 150, 0, 10], 'Кавалерія': [150, 150, 0, 150, 10], 'Осада': [150, 150, 150, 150, 10]},
-    'T4': {'Піхота': [1000, 0, 1000, 1000, 500], 'Лучники': [1000, 1000, 1000, 0, 500], 'Кавалерія': [1000, 1000, 0, 1000, 500], 'Осада': [1271, 1271, 1271, 1271, 635]}
-}
-
-UNIT_TIMES = {'T1': 6, 'T2': 16, 'T3': 48, 'T4': 120}
-
-ALL_MONSTERS = [
-    'Великий Гук', 'Грифон', 'Гаргантюа', 'Древній голем', 
-    'Колюча квітка', 'Королева бджіл', 'Льодокрил', 'Мега-хробак', 
-    'Моторошна лапа', 'Носоріг', 'Нещадний жнець', 'Некрозис', 
-    'Наг гладіатор', 'Ненажера', 'Нефритовий змій', 'Освальд', 
-    'Пекельний павук', 'Скажений хатько', 'Скалозуб', 'Сніговий звір', 
-    'Титан', 'Троянський кінь', 'Чорнокрил', 'Шаман вуду'
-]
-
-SPEEDUP_NOMINALS = [
-    ("1 хв", 60), ("3 хв", 180), ("5 хв", 300), ("10 хв", 600), 
-    ("15 хв", 900), ("30 хв", 1800), ("1 год", 3600), ("3 год", 10800), 
-    ("8 год", 28800), ("15 год", 54000), ("24 год", 86400), 
-    ("3 дн", 259200), ("14 дн", 1209600), ("30 дн", 2592000)
-]
-
-# -------------------------------------------------------------
-# ✨ СТРУКТУРА КАТЕГОРІЙ ТА СПОРЯДЖЕННЯ АСТРАЛІТУ
-# -------------------------------------------------------------
-ASTRALITE_SLOTS = [
-    {"id": "main_hand", "name": "🗡️ Рука 1 (Основна)", "folder": "main_hand", "for_calc": True},
-    {"id": "head", "name": "🪖 Голова", "folder": "head", "for_calc": True},
-    {"id": "chest", "name": "🛡️ Нагрудник", "folder": "chest", "for_calc": True},
-    {"id": "legs", "name": "🥾 Взуття", "folder": "legs", "for_calc": True},
-    {"id": "off_hand", "name": "🗡️ Рука 2 (Другорядна)", "folder": "off_hand", "for_calc": True},
-    {"id": "accessories", "name": "💍 Прикраси", "folder": "accessories", "for_calc": True},
-    {"id": "emperor1", "name": "👑 Перший імператор", "folder": "emperor1", "for_calc": False},
-    {"id": "emperor2", "name": "👑 Другий імператор", "folder": "emperor2", "for_calc": False}
-]
-
-ASTRALITE_ITEMS = {
-    "main_hand": [
-        {"id": "mh_1", "name": "Громова Піка", "filename": "Громова Піка.jpg"},
-        {"id": "mh_2", "name": "Декадентний меч", "filename": "Декадентний меч.jpg"},
-        {"id": "mh_3", "name": "Ефемерна тростина", "filename": "Ефемерна тростина.jpg"},
-        {"id": "mh_4", "name": "Землетрус", "filename": "Землетрус.jpg"},
-        {"id": "mh_5", "name": "Кістяний скіпетр", "filename": "Кістяний скіпетр.jpg"},
-        {"id": "mh_6", "name": "Клинок Льодокрила", "filename": "Клинок Льодокрила.jpg"},
-        {"id": "mh_7", "name": "Клинок Чемпіона", "filename": "Клинок Чемпіона.jpg"},
-        {"id": "mh_8", "name": "Колючий батіг", "filename": "Колючий батіг.jpg"},
-        {"id": "mh_9", "name": "Лезо Чемпіона", "filename": "Лезо Чемпіона.jpg"},
-        {"id": "mh_10", "name": "Механічна Пила", "filename": "Механічна Пила.jpg"},
-        {"id": "mh_11", "name": "Паровий пістолет", "filename": "Паровий пістолет.jpg"},
-        {"id": "mh_12", "name": "Рогатий дрюк", "filename": "Рогатий дрюк.jpg"},
-        {"id": "mh_13", "name": "Скіпетр Ящера", "filename": "Скіпетр Ящера.jpg"},
-        {"id": "mh_14", "name": "Топор Эона", "filename": "Топор Эона.jpg"},
-        {"id": "mh_15", "name": "Чемпіонське Лезо", "filename": "Чемпіонське Лезо.jpg"},
-        {"id": "mh_16", "name": "Череполом", "filename": "Череполом.jpg"},
-        {"id": "mh_17", "name": "Якір Кракена", "filename": "Якір Кракена.jpg"},
-        {"id": "mh_18", "name": "Янтарний посох", "filename": "Янтарний посох.jpg"}
-    ],
-    "head": [
-        {"id": "hd_1", "name": "Армет Чемпіона", "filename": "Армет Чемпіона.jpg"},
-        {"id": "hd_2", "name": "Вінець Ящера", "filename": "Вінець Ящера.jpg"},
-        {"id": "hd_3", "name": "Маска Орка", "filename": "Маска Орка.jpg"},
-        {"id": "hd_4", "name": "Мисливський Шолом", "filename": "Мисливський Шолом.jpg"},
-        {"id": "hd_5", "name": "Проклята маска", "filename": "Проклята маска.jpg"},
-        {"id": "hd_6", "name": "Старовинний Капелюх", "filename": "Старовинний Капелюх.jpg"},
-        {"id": "hd_7", "name": "Чемпіонське Забрало", "filename": "Чемпіонське Забрало.jpg"},
-        {"id": "hd_8", "name": "Шлем Нага", "filename": "Шлем Нага.jpg"},
-        {"id": "hd_9", "name": "Шлем Пожирателя", "filename": "Шлем Пожирателя.jpg"},
-        {"id": "hd_10", "name": "Шолом Звіра", "filename": "Шолом Звіра.jpg"},
-        {"id": "hd_11", "name": "Шолом Королеви Бджіл", "filename": "Шолом Королеви Бджіл.jpg"},
-        {"id": "hd_12", "name": "Шолом Льодокрила", "filename": "Шолом Льодокрила.jpg"},
-        {"id": "hd_13", "name": "Шолом Тіні", "filename": "Шолом Тіні.jpg"},
-        {"id": "hd_14", "name": "Шолом Чемпіона", "filename": "Шолом Чемпіона.jpg"}
-    ],
-    "chest": [
-        {"id": "ch_1", "name": "Броня Вбивці Бджіл", "filename": "Броня Вбивці Бджіл.jpg"},
-        {"id": "ch_2", "name": "Броня Льодокрила", "filename": "Броня Льодокрила.jpg"},
-        {"id": "ch_3", "name": "Вогнетривка Броня", "filename": "Вогнетривка Броня.jpg"},
-        {"id": "ch_4", "name": "Гедонічна Кіраса", "filename": "Гедонічна Кіраса.jpg"},
-        {"id": "ch_5", "name": "Кіраса Чемпіона", "filename": "Кіраса Чемпіона.jpg"},
-        {"id": "ch_6", "name": "Мантія Смерті", "filename": "Мантія Смерті.jpg"},
-        {"id": "ch_7", "name": "Мисливська Кіраса", "filename": "Мисливська Кіраса.jpg"},
-        {"id": "ch_8", "name": "Моторошний Нагрудник", "filename": "Моторошний Нагрудник.jpg"},
-        {"id": "ch_9", "name": "Нагрудник Чемпіона", "filename": "Нагрудник Чемпіона.jpg"},
-        {"id": "ch_10", "name": "Наплічник Хижака", "filename": "Наплічник Хижака.jpg"},
-        {"id": "ch_11", "name": "Хутряне Пальто", "filename": "Хутряне Пальто.jpg"},
-        {"id": "ch_12", "name": "Чемпіонська Кольчуга", "filename": "Чемпіонська Кольчуга.jpg"},
-        {"id": "ch_13", "name": "Щит із Шипами", "filename": "Щит із Шипами.jpg"}
-    ],
-    "legs": [
-        {"id": "lg_1", "name": "Жахливий Пояс", "filename": "Жахливий Пояс.jpg"},
-        {"id": "lg_2", "name": "Мехаботи", "filename": "Мехаботи.jpg"},
-        {"id": "lg_3", "name": "Мисливські Поножі", "filename": "Мисливські Поножі.jpg"},
-        {"id": "lg_4", "name": "Моторошний Пояс", "filename": "Моторошний Пояс.jpg"},
-        {"id": "lg_5", "name": "Нестримні Поножі", "filename": "Нестримні Поножі.jpg"},
-        {"id": "lg_6", "name": "Поножі Метелі", "filename": "Поножі Метелі.jpg"},
-        {"id": "lg_7", "name": "Поножі Шахрая", "filename": "Поножі Шахрая.jpg"},
-        {"id": "lg_8", "name": "Скелясті Сандалі", "filename": "Скелясті Сандалі.jpg"},
-        {"id": "lg_9", "name": "Таємнича Хода", "filename": "Таємнича Хода.jpg"},
-        {"id": "lg_10", "name": "Черевики Чемпіона", "filename": "Черевики Чемпіона.jpg"},
-        {"id": "lg_11", "name": "Чоботи Грифона", "filename": "Чоботи Грифона.jpg"},
-        {"id": "lg_12", "name": "Чоботи Дракона", "filename": "Чоботи Дракона.jpg"},
-        {"id": "lg_13", "name": "Чоботи Чемпіона", "filename": "Чоботи Чемпіона.jpg"},
-        {"id": "lg_14", "name": "Чемпіонські Поножі", "filename": "Чемпіонські Поножі.jpg"},
-        {"id": "lg_15", "name": "Швидкі Чоботи", "filename": "Швидкі Чоботи.jpg"},
-        {"id": "lg_16", "name": "Штормові Тассети", "filename": "Штормові Тассети.jpg"}
-    ],
-    "off_hand": [
-        {"id": "oh_1", "name": "Вічний Рукопис", "filename": "Вічний Рукопис.jpg"},
-        {"id": "oh_2", "name": "Злюча Лампа", "filename": "Злюча Лампа.jpg"},
-        {"id": "oh_3", "name": "Карат Чемпіона", "filename": "Карат Чемпіона.jpg"},
-        {"id": "oh_4", "name": "Лампа Чемпіона", "filename": "Лампа Чемпіона.jpg"},
-        {"id": "oh_5", "name": "Мехоперчатка", "filename": "Мехоперчатка.jpg"},
-        {"id": "oh_6", "name": "Мисливська Булава", "filename": "Мисливська Булава.jpg"},
-        {"id": "oh_7", "name": "Місячний Бумеранг", "filename": "Місячний Бумеранг.jpg"},
-        {"id": "oh_8", "name": "Отравлений Клинок", "filename": "Отравлений Клинок.jpg"},
-        {"id": "oh_9", "name": "Поклик Глибин", "filename": "Поклик Глибин.jpg"},
-        {"id": "oh_10", "name": "Правиця Дракона", "filename": "Правиця Дракона.jpg"},
-        {"id": "oh_11", "name": "Складний Ніж", "filename": "Складний Ніж.jpg"},
-        {"id": "oh_12", "name": "Темний Покровитель", "filename": "Темний Покровитель.jpg"},
-        {"id": "oh_13", "name": "Топор Разрушителя", "filename": "Топор Разрушителя.jpg"},
-        {"id": "oh_14", "name": "Хутряні Рукавиці", "filename": "Хутряні Рукавиці.jpg"},
-        {"id": "oh_15", "name": "Чарівний Флакон", "filename": "Чарівний Флакон.jpg"},
-        {"id": "oh_16", "name": "Чемпіонська Світоч", "filename": "Чемпіонська Світоч.jpg"}
-    ],
-    "accessories": [
-        {"id": "ac_1", "name": "Благодать Чемпіона", "filename": "Благодать Чемпіона.jpg"},
-        {"id": "ac_2", "name": "Божественний Кубок", "filename": "Божественний Кубок.jpg"},
-        {"id": "ac_3", "name": "Віра Чемпіона", "filename": "Віра Чемпіона.jpg"},
-        {"id": "ac_4", "name": "Дихання Льодокрила", "filename": "Дихання Льодокрила.jpg"},
-        {"id": "ac_5", "name": "Каблучка Гниття", "filename": "Каблучка Гниття.jpg"},
-        {"id": "ac_6", "name": "Книга Мертвих", "filename": "Книга Мертвих.jpg"},
-        {"id": "ac_7", "name": "Магічний Флакон", "filename": "Магічний Флакон.jpg"},
-        {"id": "ac_8", "name": "Око Дракона", "filename": "Око Дракона.jpg"},
-        {"id": "ac_9", "name": "Палаючий Згорток", "filename": "Палаючий Згорток.jpg"},
-        {"id": "ac_10", "name": "Печатка Ящера", "filename": "Печатка Ящера.jpg"},
-        {"id": "ac_11", "name": "Полярне Кольцо", "filename": "Полярне Кольцо.jpg"},
-        {"id": "ac_12", "name": "Решимость Буяна", "filename": "Решимость Буяна.jpg"},
-        {"id": "ac_13", "name": "Спіральні Наручі", "filename": "Спіральні Наручі.jpg"},
-        {"id": "ac_14", "name": "Страхаючий Барабан", "filename": "Страхаючий Барабан.jpg"},
-        {"id": "ac_15", "name": "Флакон Моці", "filename": "Флакон Моці.jpg"},
-        {"id": "ac_16", "name": "Чемпіонська Слава", "filename": "Чемпіонська Слава.jpg"}
-    ],
-    "emperor1": [
-        {"id": "emp1_1", "name": "Імператорський Захист", "filename": "Імператорський Захист.jpg"},
-        {"id": "emp1_2", "name": "Тассети Величі", "filename": "Тассети Величі.jpg"},
-        {"id": "emp1_3", "name": "Царевбивця", "filename": "Царевбивця.jpg"},
-        {"id": "emp1_4", "name": "Царський Стрій", "filename": "Царський Стрій.jpg"},
-        {"id": "emp1_5", "name": "Шляхетний шолом", "filename": "Шляхетний шолом.jpg"}
-    ],
-    "emperor2": [
-        {"id": "emp2_1", "name": "Кришталева Сокира", "filename": "Кришталева Сокира.jpg"},
-        {"id": "emp2_2", "name": "Обличчя жаху", "filename": "Обличчя жаху.jpg"},
-        {"id": "emp2_3", "name": "Переможна Рука", "filename": "Переможна Рука.jpg"},
-        {"id": "emp2_4", "name": "Поножі Монарха", "filename": "Поножі Монарха.jpg"},
-        {"id": "emp2_5", "name": "Чудова Броня", "filename": "Чудова Броня.jpg"}
-    ]
-}
-
-DEFAULT_ASTRALITE_COSTS = [10, 20, 35, 50, 75, 100, 150, 200, 300, 450, 600, 800]
-
-ASTRALITE_COSTS = {
-    **{f"mh_{i}": DEFAULT_ASTRALITE_COSTS for i in range(1, 19)},
-    **{f"hd_{i}": DEFAULT_ASTRALITE_COSTS for i in range(1, 15)},
-    **{f"ch_{i}": DEFAULT_ASTRALITE_COSTS for i in range(1, 14)},
-    **{f"lg_{i}": DEFAULT_ASTRALITE_COSTS for i in range(1, 17)},
-    **{f"oh_{i}": DEFAULT_ASTRALITE_COSTS for i in range(1, 17)},
-    **{f"ac_{i}": DEFAULT_ASTRALITE_COSTS for i in range(1, 17)}
-}
-
-user_sessions = {}
-
-def format_time(seconds):
-    days = seconds // 86400
-    hours = (seconds % 86400) // 3600
-    minutes = (seconds % 3600) // 60
-    res = []
-    if days > 0: res.append(f"{days}дн")
-    if hours > 0: res.append(f"{hours}год")
-    if minutes > 0: res.append(f"{minutes}хв")
-    return " ".join(res) if res else "0хв"
-
-def calc_exact_gems(seconds):
-    if seconds <= 0: return 0
-    packs = [
-        (30 * 86400, 40000), (7 * 86400, 10000), (3 * 86400, 4400),
-        (24 * 3600, 1500), (15 * 3600, 1000), (8 * 3600, 650),
-        (3 * 3600, 300), (60 * 60, 130), (15 * 60, 70), (1 * 60, 5)
-    ]
-    total_gems = 0
-    remaining_seconds = seconds
-    for pack_seconds, pack_price in packs:
-        if remaining_seconds >= pack_seconds:
-            num_packs = remaining_seconds // pack_seconds
-            total_gems += num_packs * pack_price
-            remaining_seconds %= pack_seconds
-    if remaining_seconds > 0:
-        total_gems += 5
-    return int(total_gems)
-
-# --- ГОЛОВНЕ МЕНЮ ---
-@bot.message_handler(commands=['start', 'menu'])
-def send_welcome(message):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    markup.add(
-        types.KeyboardButton("📊 Калькулятор тренування"),
-        types.KeyboardButton("⏱️ Сумування прискорень із сумки"),
-        types.KeyboardButton("👹 Пачки на монстрів"),
-        types.KeyboardButton("✨ Астраліт"),
-        types.KeyboardButton("📅 Розклад появи монстрів"),
-        types.KeyboardButton("🗓️ Календар подій на 2026 рік")
-    )
-    bot.send_message(
-        message.chat.id, 
-        "🇺🇦 <b>Вітаю в асистенті Lords Mobile!</b>\nОберіть потрібний розділ:", 
-        reply_markup=markup, 
-        parse_mode="HTML"
-    )
-
-# --- АСТРАЛІТ MENU ---
-@bot.message_handler(func=lambda message: message.text == "✨ Астраліт")
-def start_astralite_menu(message):
-    chat_id = message.chat.id
-    user_sessions[chat_id] = {}
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("ℹ️ Просто глянути інформацію", callback_data="ast_mode_info"),
-        types.InlineKeyboardButton("🧮 Підрахунок астраліту", callback_data="ast_mode_calc")
-    )
-    bot.send_message(
-        chat_id, 
-        "✨ <b>Розділ: Астраліт</b>\nОберіть потрібну дію:", 
-        reply_markup=markup, 
-        parse_mode="HTML"
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("ast_mode_"))
-def handle_astralite_mode(call):
-    chat_id = call.message.chat.id
-    mode = call.data.split("ast_mode_")[1]
-    user_sessions[chat_id]['ast_mode'] = mode
-
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    available_slots = ASTRALITE_SLOTS if mode == "info" else [s for s in ASTRALITE_SLOTS if s['for_calc']]
-
-    for slot in available_slots:
-        markup.add(types.InlineKeyboardButton(slot['name'], callback_data=f"ast_slot_{slot['id']}"))
-    
-    bot.edit_message_text(
-        chat_id=chat_id, 
-        message_id=call.message.message_id, 
-        text="👕 <b>Оберіть категорію спорядження:</b>", 
-        reply_markup=markup, 
-        parse_mode="HTML"
-    )
-
-# --- ОБРОБКА ВИБОРУ СЛОТА СМОТКИ ---
-@bot.callback_query_handler(func=lambda call: call.data.startswith("ast_slot_"))
-def handle_astralite_slot(call):
-    chat_id = call.message.chat.id
-    slot_id = call.data.split("ast_slot_")[1]
-    user_sessions[chat_id]['ast_slot_id'] = slot_id
-
-    slot_info = next((s for s in ASTRALITE_SLOTS if s['id'] == slot_id), None)
-    slot_name = slot_info['name'] if slot_info else "Спорядження"
-    folder = slot_info['folder'] if slot_info else slot_id
-
-    # 👑СПЕЦІАЛЬНА ОБРОБКА ДЛЯ ІМПЕРАТОРСЬКИХ СЕТІВ: НАДІСЛАННЯ ВСІХ СКРИНШОТІВ АЛЬБОМОМ
-    if slot_id in ["emperor1", "emperor2"]:
-        bot.send_chat_action(chat_id, 'upload_photo')
-        items = ASTRALITE_ITEMS.get(slot_id, [])
-        media_group = []
-
-        for idx, item in enumerate(items):
-            photo_path = os.path.join(ASTRALITE_DIR, folder, item['filename'])
-            if os.path.exists(photo_path):
-                caption = f"👑 <b>{slot_name}</b>\n✨ {item['name']}" if idx == 0 else ""
-                media_group.append(types.InputMediaPhoto(open(photo_path, 'rb'), caption=caption, parse_mode="HTML"))
-
-        if media_group:
-            try:
-                bot.send_media_group(chat_id, media_group, protect_content=True)
-            except Exception as e:
-                bot.send_message(chat_id, f"❌ Помилка надсилання альбому: {e}")
-        else:
-            bot.send_message(
-                chat_id, 
-                f"⚠️ Скриншоти для <b>{slot_name}</b> ще не знайдено в папці <code>astralite/{folder}/</code>", 
-                parse_mode="HTML"
-            )
-        bot.answer_callback_query(call.id)
-        return
-
-    # ЗВИЧАЙНИЙ ВИВІД СПИСКУ ШМОТОК ДЛЯ ІНШИХ СЛОТІВ
-    items = ASTRALITE_ITEMS.get(slot_id, [])
-    if not items:
-        bot.answer_callback_query(call.id, "Цей розділ ще заповнюється!", show_alert=True)
-        return
-
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    for item in items:
-        markup.add(types.InlineKeyboardButton(item['name'], callback_data=f"ast_item_{item['id']}"))
-
-    bot.edit_message_text(
-        chat_id=chat_id, 
-        message_id=call.message.message_id, 
-        text=f"🛡️ Категорія: <b>{slot_name}</b>\n\n<b>Оберіть конкретний предмет:</b>", 
-        reply_markup=markup, 
-        parse_mode="HTML"
-    )
-
-@bot.callback_query_handler(func=lambda call: call.data.startswith("ast_item_"))
-def handle_astralite_item(call):
-    chat_id = call.message.chat.id
-    item_id = call.data.split("ast_item_")[1]
-    user_sessions[chat_id]['ast_item_id'] = item_id
-
-    slot_id = user_sessions[chat_id].get('ast_slot_id')
-    items_list = ASTRALITE_ITEMS.get(slot_id, [])
-    item_info = next((i for i in items_list if i['id'] == item_id), None)
-    
-    item_name = item_info['name'] if item_info else "Обраний предмет"
-    filename = item_info.get('filename', f"{item_id}.jpg") if item_info else f"{item_id}.jpg"
-    
-    user_sessions[chat_id]['ast_item_name'] = item_name
-
-    mode = user_sessions[chat_id].get('ast_mode', 'info')
-
-    if mode == "info":
-        folder = user_sessions[chat_id].get('ast_slot_folder', 'main_hand')
-        photo_path = os.path.join(ASTRALITE_DIR, folder, filename)
+<body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
+    <div class="max-w-5xl mx-auto space-y-6">
         
-        bot.send_chat_action(chat_id, 'upload_photo')
-        
-        if os.path.exists(photo_path):
-            with open(photo_path, 'rb') as photo:
-                bot.send_photo(
-                    chat_id, photo, 
-                    caption=f"✨ <b>Інформація про астралювання: {item_name}</b>", 
-                    parse_mode="HTML", protect_content=True
-                )
-        else:
-            bot.send_message(
-                chat_id, 
-                f"ℹ️ <b>{item_name}</b>\n\n⚠️ Файл зображення очікується за шляхом:\n<code>{photo_path}</code>", 
-                parse_mode="HTML"
-            )
-        bot.answer_callback_query(call.id)
-    else:
-        markup = types.InlineKeyboardMarkup(row_width=1)
-        markup.add(
-            types.InlineKeyboardButton("🔮 Звичайний астраліт", callback_data="ast_type_normal"),
-            types.InlineKeyboardButton("🐉 Астраліт з монстрів", callback_data="ast_type_monster")
-        )
-        bot.edit_message_text(
-            chat_id=chat_id, 
-            message_id=call.message.message_id, 
-            text=f"⚙️ Предмет: <b>{item_name}</b>\n\nОберіть джерело/тип астраліту:", 
-            reply_markup=markup, 
-            parse_mode="HTML"
-        )
+        <!-- Header -->
+        <header class="border-b border-slate-700 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+                <h1 class="text-2xl md:text-3xl font-bold text-amber-400">🛡️ Lords Mobile — Полювання</h1>
+                <p class="text-slate-400 text-sm">Перевірка норми монстрів та керування боржниками</p>
+            </div>
+            <span class="bg-slate-800 text-slate-300 text-xs px-3 py-1.5 rounded-full border border-slate-700">Client-Side (100% Безпечно)</span>
+        </header>
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("ast_type_"))
-def handle_astralite_type(call):
-    chat_id = call.message.chat.id
-    ast_type = call.data.split("ast_type_")[1]
-    type_name = "Звичайний астраліт" if ast_type == "normal" else "Астраліт з монстрів"
-    user_sessions[chat_id]['ast_type_name'] = type_name
+        <!-- Control Panel -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- File Upload -->
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 md:col-span-2">
+                <label class="block text-sm font-medium text-slate-300 mb-2">Обрати .xlsx файл бота</label>
+                <input type="file" id="excelFile" accept=".xlsx, .xls" 
+                    class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-amber-500 file:text-slate-900 hover:file:bg-amber-400 cursor-pointer">
+            </div>
 
-    msg = bot.send_message(
-        chat_id, 
-        f"📥 Скільки у вас є <b>{type_name}</b>?", 
-        parse_mode="HTML"
-    )
-    bot.register_next_step_handler(msg, process_astralite_count)
+            <!-- Target Norm -->
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (для розрахунку боргу)</label>
+                <input type="number" id="normInput" value="42" min="1" 
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-bold focus:outline-none focus:border-amber-500">
+            </div>
+        </div>
 
-def process_astralite_count(message):
-    chat_id = message.chat.id
-    try:
-        count = int(message.text.strip())
-        if count < 0: count = 0
-        
-        session = user_sessions.get(chat_id, {})
-        item_id = session.get('ast_item_id', 'mh_1')
-        item_name = session.get('ast_item_name', 'Спорядження')
-        type_name = session.get('ast_type_name', 'Астраліт')
+        <!-- Stats Overview -->
+        <div id="statsGrid" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">Активних гравців</p>
+                <p id="statTotal" class="text-xl font-bold text-slate-100">0</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">Виконали норму</p>
+                <p id="statSuccess" class="text-xl font-bold text-emerald-400">0</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">Боржники</p>
+                <p id="statDebtors" class="text-xl font-bold text-rose-400">0</p>
+            </div>
+            <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
+                <p class="text-slate-400 text-xs">% Виконання</p>
+                <p id="statPercent" class="text-xl font-bold text-amber-400">0%</p>
+            </div>
+        </div>
 
-        costs = ASTRALITE_COSTS.get(item_id, DEFAULT_ASTRALITE_COSTS)
+        <!-- Top 5 Hunters Section -->
+        <div id="top5Section" class="hidden bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
+            <div class="flex justify-between items-center border-b border-slate-700 pb-2">
+                <h2 class="text-lg font-bold text-amber-400 flex items-center gap-2">🏆 ТОП-5 Мисливців Тижня</h2>
+                <button id="copyTop5Btn" onclick="copyTop5List()" 
+                    class="bg-amber-600 hover:bg-amber-500 text-slate-900 font-semibold text-xs px-3 py-1.5 rounded-lg transition-colors">
+                    📋 Скопіювати ТОП-5
+                </button>
+            </div>
+            <div id="top5List" class="grid grid-cols-1 sm:grid-cols-5 gap-3"></div>
+        </div>
 
-        current_level = 0
-        remaining_count = count
-        needed_for_next = 0
+        <!-- Filters & Actions Panel -->
+        <div id="actionsPanel" class="hidden bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-2">
+                <input type="text" id="searchInput" placeholder="Пошук за ніком..." 
+                    class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-amber-500 w-48 sm:w-64">
+                
+                <select id="filterSelect" class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none">
+                    <option value="all">Усі гравці</option>
+                    <option value="debtors">Тільки боржники</option>
+                    <option value="excluded">Виключені</option>
+                </select>
+            </div>
 
-        for idx, cost in enumerate(costs):
-            if remaining_count >= cost:
-                remaining_count -= cost
-                current_level = idx + 1
-            else:
-                needed_for_next = cost - remaining_count
-                break
+            <button id="copyBtn" onclick="copyDebtorsList()" 
+                class="bg-rose-600 hover:bg-rose-500 text-white font-medium text-sm px-4 py-2 rounded-lg transition-colors flex items-center gap-2">
+                📋 Скопіювати боржників для чату
+            </button>
+        </div>
 
-        report = (
-            f"✨ <b>РЕЗУЛЬТАТ ПІДРАХУНКУ АСТРАЛІТУ</b> ✨\n\n"
-            f"🛡️ <b>Предмет:</b> {item_name}\n"
-            f"🔮 <b>Тип:</b> {type_name}\n"
-            f"📦 <b>Введено:</b> {count:,} шт.\n\n"
-            f"🏅 <b>Максимальний рівень покращення:</b> +{current_level}\n"
-        )
+        <!-- Table -->
+        <div id="tableContainer" class="hidden bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-300">
+                    <thead class="bg-slate-900 text-slate-400 uppercase text-xs border-b border-slate-700">
+                        <tr>
+                            <th class="px-4 py-3">Нікнейм</th>
+                            <th class="px-4 py-3 text-center">Корегування</th>
+                            <th class="px-4 py-3 text-center">Разом балів</th>
+                            <th class="px-4 py-3 text-center">% Норми</th>
+                            <th class="px-4 py-3 text-center">Борг</th>
+                            <th class="px-4 py-3 text-center">Статус</th>
+                            <th class="px-4 py-3 text-center">Дія</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="divide-y divide-slate-700/50"></tbody>
+                </table>
+            </div>
+        </div>
 
-        if current_level < len(costs):
-            report += f"⏳ <b>Не вистачає до +{current_level + 1} рівня:</b> {needed_for_next:,} шт."
-        else:
-            report += f"🎉 <b>Вітаємо! У вас достатньо астраліту для МАКСИМАЛЬНОГО рівня!</b>"
+    </div>
 
-        bot.send_message(chat_id, report, parse_mode="HTML")
+    <script>
+        let parsedData = [];
+        let manualAdjustments = {}; 
+        let excludedPlayers = new Set(); 
 
-    except Exception:
-        msg = bot.send_message(
-            chat_id, 
-            "❌ Будь ласка, введіть ціле число (наприклад <code>2500</code>):", 
-            parse_mode="HTML"
-        )
-        bot.register_next_step_handler(msg, process_astralite_count)
+        document.getElementById('excelFile').addEventListener('change', handleFile);
+        document.getElementById('normInput').addEventListener('input', renderData);
+        document.getElementById('searchInput').addEventListener('input', renderData);
+        document.getElementById('filterSelect').addEventListener('change', renderData);
 
-# --- РОЗДІЛ: КАЛЕНДАР ПОДІЙ НА 2026 ---
-@bot.message_handler(func=lambda message: message.text == "🗓️ Календар подій на 2026 рік")
-def send_events_calendar(message):
-    chat_id = message.chat.id
-    bot.send_chat_action(chat_id, 'upload_photo')
-    
-    file1 = None
-    for ext in ['png', 'jpg', 'jpeg']:
-        if os.path.exists(f"календар1.{ext}"):
-            file1 = f"календар1.{ext}"
-            break
+        function handleFile(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const data = new Uint8Array(evt.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                
+                const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+                if (rawRows.length < 2) return;
+
+                let nameColIdx = 1;   // Стовпець B
+                let pointsColIdx = 18; // Стовпець S
+                let percentColIdx = 19; // Стовпець T
+
+                for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
+                    const row = rawRows[r];
+                    for (let c = 0; c < row.length; c++) {
+                        const cellVal = String(row[c]).trim().toLowerCase();
+                        if (cellVal === 'user name' || cellVal === 'name') nameColIdx = c;
+                        if (cellVal === 'points (hunt)' || cellVal === 'points') pointsColIdx = c;
+                    }
+                }
+
+                parsedData = [];
+                manualAdjustments = {};
+                excludedPlayers.clear();
+
+                for (let i = 0; i < rawRows.length; i++) {
+                    const row = rawRows[i];
+                    if (!row || row.length <= nameColIdx) continue;
+
+                    const rawName = String(row[nameColIdx] || "").trim();
+                    
+                    if (!rawName || 
+                        rawName.toLowerCase() === 'user name' || 
+                        rawName.toLowerCase() === 'name' ||
+                        rawName.toLowerCase().includes('total') || 
+                        rawName.toLowerCase().includes('user id')) {
+                        continue;
+                    }
+
+                    const basePoints = parseFloat(row[pointsColIdx]) || 0;
+
+                    // --- ВИПРАВЛЕНИЙ ПАРСИНГ ВІДСОТКІВ ---
+                    let rawPercentStr = String(row[percentColIdx] || "").replace('%', '').trim();
+                    let filePercent = parseFloat(rawPercentStr);
+                    
+                    if (!isNaN(filePercent)) {
+                        // Якщо значення <= 5 (наприклад, 1, 0.95, 1.05), множимо на 100
+                        if (filePercent <= 5) {
+                            filePercent = Math.round(filePercent * 100);
+                        } else {
+                            filePercent = Math.round(filePercent);
+                        }
+                    } else {
+                        filePercent = 0;
+                    }
+
+                    parsedData.push({
+                        id: parsedData.length,
+                        name: rawName,
+                        basePoints: basePoints,
+                        filePercent: filePercent
+                    });
+                }
+
+                document.getElementById('actionsPanel').classList.remove('hidden');
+                document.getElementById('statsGrid').classList.remove('hidden');
+                document.getElementById('top5Section').classList.remove('hidden');
+                document.getElementById('tableContainer').classList.remove('hidden');
+
+                renderData();
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function updateAdjustment(playerId, value) {
+            manualAdjustments[playerId] = parseFloat(value) || 0;
+            renderData();
+        }
+
+        function toggleExclude(playerId) {
+            if (excludedPlayers.has(playerId)) {
+                excludedPlayers.delete(playerId);
+            } else {
+                excludedPlayers.add(playerId);
+            }
+            renderData();
+        }
+
+        function getProcessedData() {
+            const norm = parseFloat(document.getElementById('normInput').value) || 1;
             
-    file2 = None
-    for ext in ['png', 'jpg', 'jpeg']:
-        if os.path.exists(f"календар2.{ext}"):
-            file2 = f"календар2.{ext}"
-            break
+            return parsedData.map(player => {
+                const adj = manualAdjustments[player.id] || 0;
+                const totalPoints = Math.max(0, player.basePoints + adj);
+                const isExcluded = excludedPlayers.has(player.id);
+                const isDebtor = !isExcluded && totalPoints < norm;
+                
+                const deficit = isDebtor ? norm - totalPoints : 0;
+                
+                // Якщо вручну змінювали бали — перераховуємо відсоток за новою формулою.
+                // Якщо бали не змінювали — беремо динамічно розрахований відсоток (або значення з файлу)
+                const percent = Math.round((totalPoints / norm) * 100);
 
-    if file1 and file2:
-        try:
-            media = [
-                types.InputMediaPhoto(open(file1, 'rb'), caption="🗓️ <b>Календар та графік подій на 2026 рік (Частина 1)</b>", parse_mode="HTML"),
-                types.InputMediaPhoto(open(file2, 'rb'), caption="🗓️ <b>Календар та графік подій на 2026 рік (Частина 2)</b>", parse_mode="HTML")
-            ]
-            bot.send_media_group(chat_id, media, protect_content=True)
-        except Exception as e:
-            bot.send_message(chat_id, f"❌ Сталася помилка при відправці альбому: {e}")
-    else:
-        bot.send_message(
-            chat_id, 
-            "⚠️ Файли календаря не знайдено.\nБудь ласка, збережи скриншоти в головній папці під назвами:\n"
-            "<code>календар1.png</code> та <code>календар2.png</code> (або .jpg)", 
-            parse_mode="HTML"
-        )
+                return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
+            });
+        }
 
-# --- РОЗДІЛ: СУМУВАННЯ ПРИСКОРЕНЬ ---
-@bot.message_handler(func=lambda message: message.text == "⏱️ Сумування прискорень із сумки")
-def start_speedup_calc(message):
-    chat_id = message.chat.id
-    user_sessions[chat_id] = {'speedups': {}, 'current_index': 0}
-    ask_next_speedup(chat_id)
+        function renderData() {
+            if (!parsedData.length) return;
 
-def ask_next_speedup(chat_id):
-    session = user_sessions.get(chat_id)
-    idx = session['current_index']
-    
-    if idx < len(SPEEDUP_NOMINALS):
-        name, _ = SPEEDUP_NOMINALS[idx]
-        msg = bot.send_message(
-            chat_id, 
-            f"📥 Введіть кількість прискорень номіналом <b>{name}</b> (або 0, якщо немає):", 
-            parse_mode="HTML"
-        )
-        bot.register_next_step_handler(msg, process_speedup_input)
-    else:
-        total_seconds = 0
-        report_details = []
-        
-        for name, seconds in SPEEDUP_NOMINALS:
-            count = session['speedups'].get(name, 0)
-            if count > 0:
-                total_seconds += count * seconds
-                report_details.append(f"• <b>{name}:</b> {count:,} шт.")
-        
-        if total_seconds > 0:
-            total_hours = total_seconds / 3600
-            total_days = total_seconds / 86400
-            
-            report = (
-                f"⏱️ <b>РЕЗУЛЬТАТ СУМУВАННЯ ПРИСКОРЕНЬ</b> ⏱️\n\n"
-                f"📦 <b>Ваш вміст сумки:</b>\n" + "\n".join(report_details) + f"\n\n"
-                f"📈 <b>Загальний час:</b>\n"
-                f"⏳ У зрозумілому вигляді: <b>{format_time(total_seconds)}</b>\n"
-                f"⏰ В годинах: <b>{total_hours:.2f} год</b>\n"
-                f"📅 В днях: <b>{total_days:.2f} дн</b>\n"
-            )
-        else:
-            report = "📭 Ви не ввели жодного прискорення. Сумка порожня!"
-            
-        bot.send_message(chat_id, report, parse_mode="HTML")
+            const processed = getProcessedData();
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            const filterMode = document.getElementById('filterSelect').value;
 
-def process_speedup_input(message):
-    chat_id = message.chat.id
-    session = user_sessions.get(chat_id)
-    idx = session['current_index']
-    name, _ = SPEEDUP_NOMINALS[idx]
-    
-    try:
-        val = message.text.strip()
-        count = int(val) if val else 0
-        if count < 0: count = 0
-        
-        session['speedups'][name] = count
-        session['current_index'] += 1
-        ask_next_speedup(chat_id)
-    except:
-        msg = bot.send_message(chat_id, f"❌ Будь ласка, введіть ціле число для номіналу <b>{name}</b>:", parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_speedup_input)
+            const activePlayers = processed.filter(p => !p.isExcluded);
+            let debtorsCount = 0;
+            let successCount = 0;
 
-# --- РОЗДІЛ: КАЛЬКУЛЯТОР ТРЕНУВАННЯ ---
-@bot.message_handler(func=lambda message: message.text == "📊 Калькулятор тренування")
-def choose_mode(message):
-    chat_id = message.chat.id
-    user_sessions[chat_id] = {}
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton("⚔️ Розрахунок за Кількістю військ", callback_data="mode_troops"),
-        types.InlineKeyboardButton("⏳ Розрахунок за Кількістю прискорень", callback_data="mode_speed")
-    )
-    bot.send_message(chat_id, "⚙️ <b>Оберіть режим калькулятора:</b>", reply_markup=markup, parse_mode="HTML")
+            activePlayers.forEach(p => {
+                if (p.isDebtor) debtorsCount++;
+                else successCount++;
+            });
 
-# --- РОЗДІЛ: РОЗКЛАД ПОЯВИ МОНСТРІВ ---
-@bot.message_handler(func=lambda message: message.text == "📅 Розклад появи монстрів")
-def send_schedule(message):
-    chat_id = message.chat.id
-    bot.send_chat_action(chat_id, 'upload_photo')
-    
-    schedule_path = None
-    for ext in ['png', 'jpg', 'jpeg']:
-        test_path = f"розклад.{ext}"
-        if os.path.exists(test_path):
-            schedule_path = test_path
-            break
-            
-    if schedule_path:
-        with open(schedule_path, 'rb') as photo:
-            bot.send_photo(
-                chat_id, 
-                photo, 
-                caption="📅 <b>Графік та черговість появи монстрів у грі</b>", 
-                parse_mode="HTML",
-                protect_content=True
-            )
-    else:
-        bot.send_message(
-            chat_id, 
-            "⚠️ Файл із графіком не знайдено.\nБудь ласка, збережи скриншот під назвою <code>розклад.png</code> або <code>розклад.jpg</code> поруч із файлом бота.", 
-            parse_mode="HTML"
-        )
+            // Update Stats
+            document.getElementById('statTotal').innerText = activePlayers.length;
+            document.getElementById('statSuccess').innerText = successCount;
+            document.getElementById('statDebtors').innerText = debtorsCount;
+            document.getElementById('statPercent').innerText = activePlayers.length ? Math.round((successCount / activePlayers.length) * 100) + '%' : '0%';
 
-# --- РОЗДІЛ: МОНСТРИ (СТОРІНКА 1) ---
-@bot.message_handler(func=lambda message: message.text == "👹 Пачки на монстрів")
-def show_monsters_p1(message):
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    buttons = [types.InlineKeyboardButton(m, callback_data=f"mon_{m}") for m in ALL_MONSTERS[:12]]
-    markup.add(*buttons)
-    markup.add(types.InlineKeyboardButton("Вперед ➡️", callback_data="mpage_2"))
-    bot.send_message(message.chat.id, "🎯 <b>Оберіть монстра для перегляду пачки (Сторінка 1/2):</b>", reply_markup=markup, parse_mode="HTML")
+            // Render Top 5
+            const top5 = [...activePlayers].sort((a, b) => b.totalPoints - a.totalPoints).slice(0, 5);
+            const top5Container = document.getElementById('top5List');
+            const medalEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
 
-# --- ПЕРЕМИКАННЯ СТОРІНОК МЕНЮ ---
-@bot.callback_query_handler(func=lambda call: call.data.startswith("mpage_"))
-def handle_monster_pages(call):
-    page = call.data.split("_")[1]
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    
-    if page == "1":
-        buttons = [types.InlineKeyboardButton(m, callback_data=f"mon_{m}") for m in ALL_MONSTERS[:12]]
-        markup.add(*buttons)
-        markup.add(types.InlineKeyboardButton("Вперед ➡️", callback_data="mpage_2"))
-        text = "🎯 <b>Оберіть монстра для перегляду пачки (Сторінка 1/2):</b>"
-    else:
-        buttons = [types.InlineKeyboardButton(m, callback_data=f"mon_{m}") for m in ALL_MONSTERS[12:]]
-        markup.add(*buttons)
-        markup.add(types.InlineKeyboardButton("⬅️ Назад", callback_data="mpage_1"))
-        text = "🎯 <b>Оберіть монстра для перегляду пачки (Сторінка 2/2):</b>"
-        
-    bot.edit_message_text(chat_id=call.message.chat.id, message_id=call.message.message_id, text=text, reply_markup=markup, parse_mode="HTML")
+            top5Container.innerHTML = top5.map((p, idx) => `
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700/60 text-center flex flex-col justify-between">
+                    <span class="text-xl mb-1">${medalEmojis[idx]}</span>
+                    <p class="font-bold text-amber-300 text-sm truncate" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</p>
+                    <p class="text-emerald-400 font-extrabold text-base mt-1">${p.percent}%</p>
+                    <p class="text-slate-400 text-xs">${p.totalPoints} балів</p>
+                </div>
+            `).join('');
 
-# --- НАДІСЛАННЯ СКРИНШОТА МОНСТРА ---
-@bot.callback_query_handler(func=lambda call: call.data.startswith("mon_"))
-def send_monster_pack(call):
-    monster_name = call.data.split("_")[1]
-    chat_id = call.message.chat.id
-    
-    photo_path = os.path.join(MONSTERS_DIR, f"{monster_name}.jpg")
-    if not os.path.exists(photo_path):
-        photo_path = os.path.join(MONSTERS_DIR, f"{monster_name.lower()}.jpg")
-        
-    bot.send_chat_action(chat_id, 'upload_photo')
-    
-    if os.path.exists(photo_path):
-        with open(photo_path, 'rb') as photo:
-            bot.send_photo(
-                chat_id, 
-                photo, 
-                caption=f"⚔️ <b>Найкращі пачки героїв на монстра: {monster_name}</b>", 
-                parse_mode="HTML",
-                protect_content=True
-            )
-    else:
-        bot.send_message(
-            chat_id, 
-            f"⚠️ Скриншот для монстра <b>{monster_name}</b> ще не знайдено.\n"
-            f"Закинь файл у папку: <code>monsters/{monster_name}.jpg</code>", 
-            parse_mode="HTML"
-        )
-    bot.answer_callback_query(call.id)
+            // Filter for display table
+            let filtered = processed.filter(p => p.name.toLowerCase().includes(searchTerm));
+            if (filterMode === 'debtors') {
+                filtered = filtered.filter(p => p.isDebtor);
+            } else if (filterMode === 'excluded') {
+                filtered = filtered.filter(p => p.isExcluded);
+            }
 
-# --- ОБРОБКА ДАНИХ КАЛЬКУЛЯТОРА ТРЕНУВАННЯ ---
-@bot.callback_query_handler(func=lambda call: call.data.startswith("mode_"))
-def handle_mode(call):
-    chat_id = call.message.chat.id
-    mode = call.data.split("_")[1]
-    user_sessions[chat_id]['mode'] = mode
-    markup = types.InlineKeyboardMarkup(row_width=4)
-    markup.add(*(types.InlineKeyboardButton(t, callback_data=f"tier_{t}") for t in ['T1', 'T2', 'T3', 'T4']))
-    mode_text = "Кількістю військ" if mode == "troops" else "Кількістю прискорень"
-    bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=f"✅ Режим: <b>За {mode_text}</b>\n\n📈 <b>Крок 1: Оберіть ранг військ (Тір):</b>", reply_markup=markup, parse_mode="HTML")
+            filtered.sort((a, b) => a.totalPoints - b.totalPoints);
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("tier_"))
-def handle_tier(call):
-    chat_id = call.message.chat.id
-    tier = call.data.split("_")[1]
-    user_sessions[chat_id]['tier'] = tier
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(
-        types.InlineKeyboardButton("⚔️ Піхота", callback_data="type_Піхота"),
-        types.InlineKeyboardButton("🏹 Лучники", callback_data="type_Лучники"),
-        types.InlineKeyboardButton("🐎 Кавалерія", callback_data="type_Кавалерія"),
-        types.InlineKeyboardButton("🪨 Осада", callback_data="type_Осада")
-    )
-    bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=f"✅ Ранг військ: <b>{tier}</b>\n\n🎯 <b>Крок 2: Оберіть тип військ:</b>", reply_markup=markup, parse_mode="HTML")
+            // Render Table Rows
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = filtered.map(p => `
+                <tr class="hover:bg-slate-700/30 transition-colors ${p.isExcluded ? 'opacity-50 bg-slate-900/40' : ''}">
+                    <td class="px-4 py-3 font-medium text-white ${p.isExcluded ? 'line-through text-slate-500' : ''}">${escapeHtml(p.name)}</td>
+                    <td class="px-4 py-3 text-center">
+                        <input type="number" value="${p.adj !== 0 ? p.adj : ''}" placeholder="0" 
+                            ${p.isExcluded ? 'disabled' : ''}
+                            onchange="updateAdjustment(${p.id}, this.value)"
+                            class="w-20 bg-slate-900 border ${p.adj < 0 ? 'border-rose-500 text-rose-400' : p.adj > 0 ? 'border-emerald-500 text-emerald-400' : 'border-slate-700 text-slate-300'} rounded text-center px-2 py-1 text-xs focus:outline-none focus:border-amber-500 disabled:opacity-50">
+                    </td>
+                    <td class="px-4 py-3 text-center font-bold ${p.isExcluded ? 'text-slate-500' : p.isDebtor ? 'text-rose-400' : 'text-emerald-400'}">${p.totalPoints}</td>
+                    <td class="px-4 py-3 text-center font-semibold ${p.isExcluded ? 'text-slate-500' : 'text-amber-300'}">${p.percent}%</td>
+                    <td class="px-4 py-3 text-center font-bold ${p.deficit > 0 ? 'text-rose-400' : 'text-slate-500'}">${p.deficit}</td>
+                    <td class="px-4 py-3 text-center">
+                        ${p.isExcluded 
+                            ? `<span class="bg-slate-700/30 text-slate-400 border border-slate-600 text-xs px-2.5 py-1 rounded-full font-semibold">Виключено</span>`
+                            : p.isDebtor 
+                            ? `<span class="bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs px-2.5 py-1 rounded-full font-semibold">Боржник</span>` 
+                            : `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs px-2.5 py-1 rounded-full font-semibold">ОК</span>`}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="toggleExclude(${p.id})" 
+                            class="text-xs px-2.5 py-1 rounded border transition-colors ${p.isExcluded ? 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600' : 'bg-rose-950/40 border-rose-800/60 text-rose-300 hover:bg-rose-900/60'}">
+                            ${p.isExcluded ? '↩️ Відновити' : '🚫 Виключити'}
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith("type_"))
-def handle_type(call):
-    chat_id = call.message.chat.id
-    w_type = call.data.split("_")[1]
-    user_sessions[chat_id]['type'] = w_type
-    bot.edit_message_text(chat_id=chat_id, message_id=call.message.message_id, text=f"✅ Тип військ: <b>{w_type}</b> ({user_sessions[chat_id]['tier']})", parse_mode="HTML")
-    msg = bot.send_message(chat_id, "💨 <b>Крок 3: Введіть вашу Швидкість тренування (%)</b>\n(Наприклад: <code>360.88</code>):", parse_mode="HTML")
-    bot.register_next_step_handler(msg, process_speed)
+        function copyDebtorsList() {
+            const norm = parseFloat(document.getElementById('normInput').value) || 1;
+            const processed = getProcessedData();
+            const debtors = processed
+                .filter(p => p.isDebtor)
+                .sort((a, b) => a.totalPoints - b.totalPoints);
 
-def process_speed(message):
-    chat_id = message.chat.id
-    try:
-        user_sessions[chat_id]['speed'] = float(message.text.replace(",", "."))
-        msg = bot.send_message(chat_id, "📉 <b>Крок 4: Введіть вашу Субсидію (%)</b>\n(Наприклад: <code>30</code>):", parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_subsidy)
-    except:
-        msg = bot.send_message(chat_id, "❌ Введіть число правильно (наприклад <code>360.88</code>):", parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_speed)
+            if (!debtors.length) {
+                alert('Боржників не знайдено!');
+                return;
+            }
 
-def process_subsidy(message):
-    chat_id = message.chat.id
-    try:
-        user_sessions[chat_id]['subsidy'] = float(message.text.replace(",", "."))
-        mode = user_sessions[chat_id]['mode']
-        if mode == "troops":
-            msg = bot.send_message(chat_id, "🔢 <b>Крок 5: Яку Кількість військ ви хочете навчити?</b>\n(Наприклад: <code>231560</code>):", parse_mode="HTML")
-            bot.register_next_step_handler(msg, process_final_troops)
-        else:
-            msg = bot.send_message(chat_id, "⏳ <b>Крок 5: Скільки у вас ДНІВ прискорень?</b>\n(Наприклад: <code>69.7</code>):", parse_mode="HTML")
-            bot.register_next_step_handler(msg, process_final_speed)
-    except:
-        msg = bot.send_message(chat_id, "❌ Введіть число правильно (наприклад <code>30</code>):", parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_subsidy)
+            let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
+            text += `----------------------------------\n`;
+            debtors.forEach((d) => {
+                text += `${d.name} – ${d.deficit}\n`;
+            });
+            text += `----------------------------------\n`;
+            text += `Всього боржників: ${debtors.length} осіб.`;
 
-def process_final_troops(message):
-    chat_id = message.chat.id
-    try:
-        count = int(message.text)
-        data = user_sessions[chat_id]
-        base_time = UNIT_TIMES[data['tier']]
-        res_table = UNIT_RESOURCES[data['tier']][data['type']]
-        
-        time_per_unit = base_time / (1 + data['speed'] / 100)
-        total_seconds = int(time_per_unit * count)
-        
-        subsidy_factor = 1 - (data['subsidy'] / 100)
-        food = int(res_table[0] * count * subsidy_factor)
-        stone = int(res_table[1] * count * subsidy_factor)
-        wood = int(res_table[2] * count * subsidy_factor)
-        ore = int(res_table[3] * count * subsidy_factor)
-        gold = int(res_table[4] * count * subsidy_factor)
-        
-        gems = calc_exact_gems(total_seconds)
-        
-        report = (
-            f"📊 <b>РЕЗУЛЬТАТИ РОЗРАХУНКУ</b> 📊\n\n"
-            f"👑 <b>Буде навчено:</b> {count:,} юнітів ({data['tier']} - {data['type']})\n"
-            f"⚡ <b>Швидкість:</b> {data['speed']}% | <b>Субсидія:</b> {data['subsidy']}%\n\n"
-            f"⏳ <b>Необхідно часу:</b> {format_time(total_seconds)}\n"
-            f"💎 <b>Потрібно самоцвітів (викуп):</b> ~{gems:,}\n\n"
-            f"📦 <b>Необхідні ресурси:</b>\n"
-            f"🌾 Потрібно їжі: {food:,}\n"
-            f"🪨 Потрібно каменю: {stone:,}\n"
-            f"🪵 Потрібно дерева: {wood:,}\n"
-            f"🪙 Потрібно руди: {ore:,}\n"
-            f"💰 Потрібно золота: {gold:,}\n"
-        )
-        bot.send_message(chat_id, report, parse_mode="HTML")
-    except Exception as e:
-        msg = bot.send_message(chat_id, f"❌ Сталася помилка введення. Введіть ціле число кількості військ:", parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_final_troops)
+            copyToClipboard(text, 'copyBtn', '📋 Скопіювати боржників для чату');
+        }
 
-def process_final_speed(message):
-    chat_id = message.chat.id
-    try:
-        days = float(message.text.replace(",", "."))
-        data = user_sessions[chat_id]
-        base_time = UNIT_TIMES[data['tier']]
-        res_table = UNIT_RESOURCES[data['tier']][data['type']]
-        
-        total_seconds_available = int(days * 86400)
-        time_per_unit = base_time / (1 + data['speed'] / 100)
-        max_troops = int(total_seconds_available / time_per_unit)
-        
-        subsidy_factor = 1 - (data['subsidy'] / 100)
-        food = int(res_table[0] * max_troops * subsidy_factor)
-        stone = int(res_table[1] * max_troops * subsidy_factor)
-        wood = int(res_table[2] * max_troops * subsidy_factor)
-        ore = int(res_table[3] * max_troops * subsidy_factor)
-        gold = int(res_table[4] * max_troops * subsidy_factor)
-        
-        report = (
-            f"📊 <b>РЕЗУЛЬТАТИ РОЗРАХУНКУ</b> 📊\n\n"
-            f"⏳ <b>За {days} днів прискорень ви зможете навчити:</b>\n"
-            f"⚔️ <b>Кількість:</b> {max_troops:,} юнітів ({data['tier']} - {data['type']})\n"
-            f"⚡ <b>Швидкість:</b> {data['speed']}% | <b>Субсидія:</b> {data['subsidy']}%\n\n"
-            f"📦 <b>На це піде ресурсів:</b>\n"
-            f"🌾 Потрібно їжі: {food:,}\n"
-            f"🪨 Потрібно каменю: {stone:,}\n"
-            f"🪵 Потрібно дерева: {wood:,}\n"
-            f"🪙 Потрібно руди: {ore:,}\n"
-            f"💰 Потрібно золота: {gold:,}\n"
-        )
-        bot.send_message(chat_id, report, parse_mode="HTML")
-    except:
-        msg = bot.send_message(chat_id, "❌ Введіть число днів (наприклад <code>7.5</code>):", parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_final_speed)
+        function copyTop5List() {
+            const processed = getProcessedData();
+            const top5 = processed
+                .filter(p => !p.isExcluded)
+                .sort((a, b) => b.totalPoints - a.totalPoints)
+                .slice(0, 5);
 
-if __name__ == "__main__":
-    print("🧹 Спроба очищення старих повідомлень Telegram...")
-    try:
-        bot.delete_webhook(drop_pending_updates=True, timeout=10)
-    except Exception as e:
-        print(f"⚠️ Не вдалося очистити чергу (таймаут), але запускаємося далі: {e}")
-        
-    time.sleep(1)
-    
-    print("🌐 Запуск фонового веб-сервера для Render...")
-    server_thread = threading.Thread(target=run_web_server)
-    server_thread.daemon = True
-    server_thread.start()
-    
-    print("🚀 Український Lords Асистент успішно запущено!")
-    bot.polling(none_stop=True, timeout=60, long_polling_timeout=60)
+            if (!top5.length) return;
+
+            let text = `🏆 *ТОП-5 МИСЛИВЦІВ ТИЖНЯ*\n`;
+            text += `----------------------------------\n`;
+            const medalEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+            top5.forEach((p, i) => {
+                text += `${medalEmojis[i]} ${p.name} – ${p.percent}%\n`;
+            });
+            text += `----------------------------------\n`;
+            text += `Вітаємо найкращих мисливців! 👏🎉`;
+
+            copyToClipboard(text, 'copyTop5Btn', '📋 Скопіювати ТОП-5');
+        }
+
+        function copyToClipboard(text, btnId, defaultText) {
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById(btnId);
+                btn.innerText = '✅ Скопійовано!';
+                setTimeout(() => {
+                    btn.innerText = defaultText;
+                }, 2000);
+            });
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/[&<>"']/g, function(m) {
+                return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+            });
+        }
+    </script>
+</body>
+</html>
