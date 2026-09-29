@@ -4,34 +4,30 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lords Mobile — Аналіз Полювання</title>
-    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- SheetJS (xlsx) CDN -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 
 <body class="bg-slate-900 text-slate-100 min-h-screen p-4 md:p-8 font-sans">
-    <div class="max-w-5xl mx-auto space-y-6">
+    <div class="max-w-6xl mx-auto space-y-6">
         
         <!-- Header -->
         <header class="border-b border-slate-700 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
                 <h1 class="text-2xl md:text-3xl font-bold text-amber-400">🛡️ Lords Mobile — Полювання</h1>
-                <p class="text-slate-400 text-sm">Перевірка норми монстрів та керування боржниками</p>
+                <p class="text-slate-400 text-sm">Перевірка норми монстрів, статистика вбитих та керування боржниками</p>
             </div>
             <span class="bg-slate-800 text-slate-300 text-xs px-3 py-1.5 rounded-full border border-slate-700">Client-Side (100% Безпечно)</span>
         </header>
 
         <!-- Control Panel -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <!-- File Upload -->
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 md:col-span-2">
                 <label class="block text-sm font-medium text-slate-300 mb-2">Обрати .xlsx файл бота</label>
                 <input type="file" id="excelFile" accept=".xlsx, .xls" 
                     class="block w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-amber-500 file:text-slate-900 hover:file:bg-amber-400 cursor-pointer">
             </div>
 
-            <!-- Target Norm -->
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700">
                 <label for="normInput" class="block text-sm font-medium text-slate-300 mb-2">Норма очок (для розрахунку боргу)</label>
                 <input type="number" id="normInput" value="42" min="1" 
@@ -39,7 +35,38 @@
             </div>
         </div>
 
-        <!-- Stats Overview -->
+        <!-- Guild Hunt Overview (D + L1..L5) -->
+        <div id="guildHuntOverview" class="hidden bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
+            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">📊 Загальна статистика вбитих монстрів (Гільдія)</h2>
+            <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-amber-500/30 text-center">
+                    <p class="text-slate-400 text-xs">Всього Hunt (D)</p>
+                    <p id="statTotalHunt" class="text-xl font-extrabold text-amber-400">0</p>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 text-center">
+                    <p class="text-slate-400 text-xs">Монстри L1</p>
+                    <p id="statL1" class="text-xl font-bold text-slate-200">0</p>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 text-center">
+                    <p class="text-slate-400 text-xs">Монстри L2</p>
+                    <p id="statL2" class="text-xl font-bold text-emerald-400">0</p>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 text-center">
+                    <p class="text-slate-400 text-xs">Монстри L3</p>
+                    <p id="statL3" class="text-xl font-bold text-sky-400">0</p>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 text-center">
+                    <p class="text-slate-400 text-xs">Монстри L4</p>
+                    <p id="statL4" class="text-xl font-bold text-indigo-400">0</p>
+                </div>
+                <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 text-center">
+                    <p class="text-slate-400 text-xs">Монстри L5</p>
+                    <p id="statL5" class="text-xl font-bold text-purple-400">0</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quota Stats Overview -->
         <div id="statsGrid" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 text-center">
                 <p class="text-slate-400 text-xs">Активних гравців</p>
@@ -117,6 +144,15 @@
         let manualAdjustments = {}; 
         let excludedPlayers = new Set(); 
 
+        let guildSummary = {
+            hunt: 0,
+            l1: 0,
+            l2: 0,
+            l3: 0,
+            l4: 0,
+            l5: 0
+        };
+
         document.getElementById('excelFile').addEventListener('change', handleFile);
         document.getElementById('normInput').addEventListener('input', renderData);
         document.getElementById('searchInput').addEventListener('input', renderData);
@@ -136,15 +172,38 @@
                 const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 if (rawRows.length < 2) return;
 
-                let nameColIdx = 1;   // Стовпець B
-                let pointsColIdx = 18; // Стовпець S
-                let percentColIdx = 19; // Стовпець T
+                // Базові індекси колонок:
+                // B = 1 (Name)
+                // D = 3 (Hunt)
+                // G = 6 (L1 Hunt)
+                // H = 7 (L2 Hunt)
+                // I = 8 (L3 Hunt)
+                // J = 9 (L4 Hunt)
+                // K = 10 (L5 Hunt)
+                // S = 18 (Points)
+                // T = 19 (Goal Percentage)
+                let nameColIdx = 1;
+                let huntColIdx = 3;
+                let l1ColIdx = 6;
+                let l2ColIdx = 7;
+                let l3ColIdx = 8;
+                let l4ColIdx = 9;
+                let l5ColIdx = 10;
+                let pointsColIdx = 18;
+                let percentColIdx = 19;
 
+                // Динамічний пошук за заголовками для гнучкості
                 for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
                     for (let c = 0; c < row.length; c++) {
                         const cellVal = String(row[c]).trim().toLowerCase();
                         if (cellVal === 'user name' || cellVal === 'name') nameColIdx = c;
+                        if (cellVal === 'hunt') huntColIdx = c;
+                        if (cellVal.includes('l1 (hunt)') || cellVal === 'l1') l1ColIdx = c;
+                        if (cellVal.includes('l2 (hunt)') || cellVal === 'l2') l2ColIdx = c;
+                        if (cellVal.includes('l3 (hunt)') || cellVal === 'l3') l3ColIdx = c;
+                        if (cellVal.includes('l4 (hunt)') || cellVal === 'l4') l4ColIdx = c;
+                        if (cellVal.includes('l5 (hunt)') || cellVal === 'l5') l5ColIdx = c;
                         if (cellVal === 'points (hunt)' || cellVal === 'points') pointsColIdx = c;
                     }
                 }
@@ -153,35 +212,57 @@
                 manualAdjustments = {};
                 excludedPlayers.clear();
 
+                let foundTotalRow = false;
+                let totalHuntSum = 0;
+                let sumL1 = 0, sumL2 = 0, sumL3 = 0, sumL4 = 0, sumL5 = 0;
+
                 for (let i = 0; i < rawRows.length; i++) {
                     const row = rawRows[i];
                     if (!row || row.length <= nameColIdx) continue;
 
                     const rawName = String(row[nameColIdx] || "").trim();
-                    
-                    if (!rawName || 
-                        rawName.toLowerCase() === 'user name' || 
-                        rawName.toLowerCase() === 'name' ||
-                        rawName.toLowerCase().includes('total') || 
-                        rawName.toLowerCase().includes('user id')) {
+                    if (!rawName || rawName.toLowerCase() === 'user name' || rawName.toLowerCase() === 'name') continue;
+
+                    // Перевірка на рядок Total
+                    if (rawName.toLowerCase() === 'total' || String(row[0] || "").trim().toLowerCase() === 'total') {
+                        foundTotalRow = true;
+                        guildSummary.hunt = parseFloat(row[huntColIdx]) || 0;
+                        guildSummary.l1 = parseFloat(row[l1ColIdx]) || 0;
+                        guildSummary.l2 = parseFloat(row[l2ColIdx]) || 0;
+                        guildSummary.l3 = parseFloat(row[l3ColIdx]) || 0;
+                        guildSummary.l4 = parseFloat(row[l4ColIdx]) || 0;
+                        guildSummary.l5 = parseFloat(row[l5ColIdx]) || 0;
                         continue;
                     }
 
+                    if (rawName.toLowerCase().includes('user id')) continue;
+
+                    // Накопичення суми на випадок, якщо рядок Total відсутній
+                    const rowHunt = parseFloat(row[huntColIdx]) || 0;
+                    const rL1 = parseFloat(row[l1ColIdx]) || 0;
+                    const rL2 = parseFloat(row[l2ColIdx]) || 0;
+                    const rL3 = parseFloat(row[l3ColIdx]) || 0;
+                    const rL4 = parseFloat(row[l4ColIdx]) || 0;
+                    const rL5 = parseFloat(row[l5ColIdx]) || 0;
+
+                    totalHuntSum += rowHunt;
+                    sumL1 += rL1;
+                    sumL2 += rL2;
+                    sumL3 += rL3;
+                    sumL4 += rL4;
+                    sumL5 += rL5;
+
                     const basePoints = parseFloat(row[pointsColIdx]) || 0;
 
-                    // --- ВИПРАВЛЕНИЙ ПАРСИНГ ВІДСОТКІВ ---
                     let rawPercentStr = String(row[percentColIdx] || "").replace('%', '').trim();
                     let filePercent = parseFloat(rawPercentStr);
                     
-                    if (!isNaN(filePercent)) {
-                        // Якщо значення <= 5 (наприклад, 1, 0.95, 1.05), множимо на 100
-                        if (filePercent <= 5) {
-                            filePercent = Math.round(filePercent * 100);
-                        } else {
-                            filePercent = Math.round(filePercent);
-                        }
-                    } else {
+                    if (!isNaN(filePercent) && filePercent > 0 && filePercent <= 5 && rawPercentStr.includes('.')) {
+                        filePercent = Math.round(filePercent * 100);
+                    } else if (isNaN(filePercent)) {
                         filePercent = 0;
+                    } else {
+                        filePercent = Math.round(filePercent);
                     }
 
                     parsedData.push({
@@ -192,6 +273,25 @@
                     });
                 }
 
+                // Якщо готового рядка Total не було, беремо розраховану суму
+                if (!foundTotalRow) {
+                    guildSummary.hunt = totalHuntSum;
+                    guildSummary.l1 = sumL1;
+                    guildSummary.l2 = sumL2;
+                    guildSummary.l3 = sumL3;
+                    guildSummary.l4 = sumL4;
+                    guildSummary.l5 = sumL5;
+                }
+
+                // Виведення загальної статистики вбитих монстрів
+                document.getElementById('statTotalHunt').innerText = guildSummary.hunt.toLocaleString();
+                document.getElementById('statL1').innerText = guildSummary.l1.toLocaleString();
+                document.getElementById('statL2').innerText = guildSummary.l2.toLocaleString();
+                document.getElementById('statL3').innerText = guildSummary.l3.toLocaleString();
+                document.getElementById('statL4').innerText = guildSummary.l4.toLocaleString();
+                document.getElementById('statL5').innerText = guildSummary.l5.toLocaleString();
+
+                document.getElementById('guildHuntOverview').classList.remove('hidden');
                 document.getElementById('actionsPanel').classList.remove('hidden');
                 document.getElementById('statsGrid').classList.remove('hidden');
                 document.getElementById('top5Section').classList.remove('hidden');
@@ -226,10 +326,7 @@
                 const isDebtor = !isExcluded && totalPoints < norm;
                 
                 const deficit = isDebtor ? norm - totalPoints : 0;
-                
-                // Якщо вручну змінювали бали — перераховуємо відсоток за новою формулою.
-                // Якщо бали не змінювали — беремо динамічно розрахований відсоток (або значення з файлу)
-                const percent = Math.round((totalPoints / norm) * 100);
+                const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
 
                 return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
             });
