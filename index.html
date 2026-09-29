@@ -36,11 +36,18 @@
         </div>
 
         <!-- Guild Hunt Overview (D + L1..L5) -->
-        <div id="guildHuntOverview" class="hidden bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-3">
-            <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">📊 Загальна статистика вбитих монстрів (Гільдія)</h2>
+        <div id="guildHuntOverview" class="hidden bg-slate-800 p-5 rounded-xl border border-slate-700 space-y-4">
+            <div class="flex flex-wrap justify-between items-center gap-2 border-b border-slate-700 pb-3">
+                <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-400">📊 Загальна статистика вбитих монстрів (Гільдія)</h2>
+                <button id="copyHuntStatsBtn" onclick="copyGuildHuntStats()" 
+                    class="bg-amber-600 hover:bg-amber-500 text-slate-900 font-semibold text-xs px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-1.5">
+                    📋 Скопіювати статистику полювання
+                </button>
+            </div>
+            
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <div class="bg-slate-900/80 p-3 rounded-lg border border-amber-500/30 text-center">
-                    <p class="text-slate-400 text-xs">Всього Вбито</p>
+                    <p class="text-slate-400 text-xs">Всього Hunt (D)</p>
                     <p id="statTotalHunt" class="text-xl font-extrabold text-amber-400">0</p>
                 </div>
                 <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 text-center">
@@ -172,16 +179,6 @@
                 const rawRows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
                 if (rawRows.length < 2) return;
 
-                // Базові індекси колонок:
-                // B = 1 (Name)
-                // D = 3 (Hunt)
-                // G = 6 (L1 Hunt)
-                // H = 7 (L2 Hunt)
-                // I = 8 (L3 Hunt)
-                // J = 9 (L4 Hunt)
-                // K = 10 (L5 Hunt)
-                // S = 18 (Points)
-                // T = 19 (Goal Percentage)
                 let nameColIdx = 1;
                 let huntColIdx = 3;
                 let l1ColIdx = 6;
@@ -192,7 +189,6 @@
                 let pointsColIdx = 18;
                 let percentColIdx = 19;
 
-                // Динамічний пошук за заголовками для гнучкості
                 for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
                     for (let c = 0; c < row.length; c++) {
@@ -223,7 +219,6 @@
                     const rawName = String(row[nameColIdx] || "").trim();
                     if (!rawName || rawName.toLowerCase() === 'user name' || rawName.toLowerCase() === 'name') continue;
 
-                    // Перевірка на рядок Total
                     if (rawName.toLowerCase() === 'total' || String(row[0] || "").trim().toLowerCase() === 'total') {
                         foundTotalRow = true;
                         guildSummary.hunt = parseFloat(row[huntColIdx]) || 0;
@@ -237,7 +232,6 @@
 
                     if (rawName.toLowerCase().includes('user id')) continue;
 
-                    // Накопичення суми на випадок, якщо рядок Total відсутній
                     const rowHunt = parseFloat(row[huntColIdx]) || 0;
                     const rL1 = parseFloat(row[l1ColIdx]) || 0;
                     const rL2 = parseFloat(row[l2ColIdx]) || 0;
@@ -273,7 +267,6 @@
                     });
                 }
 
-                // Якщо готового рядка Total не було, беремо розраховану суму
                 if (!foundTotalRow) {
                     guildSummary.hunt = totalHuntSum;
                     guildSummary.l1 = sumL1;
@@ -283,7 +276,6 @@
                     guildSummary.l5 = sumL5;
                 }
 
-                // Виведення загальної статистики вбитих монстрів
                 document.getElementById('statTotalHunt').innerText = guildSummary.hunt.toLocaleString();
                 document.getElementById('statL1').innerText = guildSummary.l1.toLocaleString();
                 document.getElementById('statL2').innerText = guildSummary.l2.toLocaleString();
@@ -348,13 +340,11 @@
                 else successCount++;
             });
 
-            // Update Stats
             document.getElementById('statTotal').innerText = activePlayers.length;
             document.getElementById('statSuccess').innerText = successCount;
             document.getElementById('statDebtors').innerText = debtorsCount;
             document.getElementById('statPercent').innerText = activePlayers.length ? Math.round((successCount / activePlayers.length) * 100) + '%' : '0%';
 
-            // Render Top 5
             const top5 = [...activePlayers].sort((a, b) => b.totalPoints - a.totalPoints).slice(0, 5);
             const top5Container = document.getElementById('top5List');
             const medalEmojis = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
@@ -368,7 +358,6 @@
                 </div>
             `).join('');
 
-            // Filter for display table
             let filtered = processed.filter(p => p.name.toLowerCase().includes(searchTerm));
             if (filterMode === 'debtors') {
                 filtered = filtered.filter(p => p.isDebtor);
@@ -378,7 +367,6 @@
 
             filtered.sort((a, b) => a.totalPoints - b.totalPoints);
 
-            // Render Table Rows
             const tbody = document.getElementById('tableBody');
             tbody.innerHTML = filtered.map(p => `
                 <tr class="hover:bg-slate-700/30 transition-colors ${p.isExcluded ? 'opacity-50 bg-slate-900/40' : ''}">
@@ -409,6 +397,21 @@
             `).join('');
         }
 
+        function copyGuildHuntStats() {
+            let text = `📊 *СТАТИСТИКА ПОЛЮВАННЯ ГІЛЬДІЇ*\n`;
+            text += `----------------------------------\n`;
+            text += `🎯 Всього вбито: ${guildSummary.hunt.toLocaleString()}\n`;
+            text += `🔹 Рівень 1: ${guildSummary.l1.toLocaleString()}\n`;
+            text += `🔹 Рівень 2: ${guildSummary.l2.toLocaleString()}\n`;
+            text += `🔹 Рівень 3: ${guildSummary.l3.toLocaleString()}\n`;
+            text += `🔹 Рівень 4: ${guildSummary.l4.toLocaleString()}\n`;
+            text += `🔹 Рівень 5: ${guildSummary.l5.toLocaleString()}\n`;
+            text += `----------------------------------\n`;
+            text += `Чудова робота гільдії! 🛡️⚔️`;
+
+            copyToClipboard(text, 'copyHuntStatsBtn', '📋 Скопіювати статистику полювання');
+        }
+
         function copyDebtorsList() {
             const norm = parseFloat(document.getElementById('normInput').value) || 1;
             const processed = getProcessedData();
@@ -421,7 +424,7 @@
                 return;
             }
 
-            let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
+            let text = `⚠️️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
             text += `----------------------------------\n`;
             debtors.forEach((d) => {
                 text += `${d.name} – ${d.deficit}\n`;
