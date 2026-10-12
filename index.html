@@ -249,17 +249,16 @@
 
                     const basePoints = parseFloat(row[pointsColIdx]) || 0;
                     
-                    // Коректне зчитування відсотка з файлу Excel (враховує числові значення, дроби та рядки з %)
+                    // Надійне зчитування відсотка: якщо число менше або рівне 50, це десятковий дріб (наприклад 3.55 -> 355%), інакше вже готовий відсоток (наприклад 355 або 4921)
                     let rawPercent = row[percentColIdx];
                     let filePercent = 0;
                     if (typeof rawPercent === 'number') {
-                        // Якщо Excel зберігає як десятковий дріб (наприклад 3.55 або 49.21) або чистий відсоток
-                        filePercent = rawPercent <= 50 ? Math.round(rawPercent * 100) : Math.round(rawPercent);
+                        filePercent = rawPercent > 0 && rawPercent <= 50 ? Math.round(rawPercent * 100) : Math.round(rawPercent);
                     } else {
                         let cleaned = String(rawPercent).replace('%', '').trim().replace(',', '.');
                         let parsed = parseFloat(cleaned);
                         if (!isNaN(parsed)) {
-                            filePercent = parsed <= 50 ? Math.round(parsed * 100) : Math.round(parsed);
+                            filePercent = parsed > 0 && parsed <= 50 ? Math.round(parsed * 100) : Math.round(parsed);
                         }
                     }
 
@@ -322,7 +321,7 @@
                 const isDebtor = !isExcluded && totalPoints < norm;
                 
                 const deficit = isDebtor ? norm - totalPoints : 0;
-                // Якщо є ручне коригування балів — перераховуємо відсоток, інакше беремо готовий з файлу
+                // Якщо є ручне коригування балів — перераховуємо відсоток, інакше беремо з файлу
                 const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
 
                 return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
