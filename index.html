@@ -47,7 +47,7 @@
             
             <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
                 <div class="bg-slate-900/80 p-3 rounded-lg border border-amber-500/30 text-center">
-                    <p class="text-slate-400 text-xs">Всього Вбито</p>
+                    <p class="text-slate-400 text-xs">Всього Hunt (D)</p>
                     <p id="statTotalHunt" class="text-xl font-extrabold text-amber-400">0</p>
                 </div>
                 <div class="bg-slate-900/80 p-3 rounded-lg border border-slate-700 text-center">
@@ -187,7 +187,7 @@
                 let l4ColIdx = 9;
                 let l5ColIdx = 10;
                 let pointsColIdx = 18;
-                let percentColIdx = 19;
+                let percentColIdx = 19; // Колонка T (Goal Percentage)
 
                 for (let r = 0; r < Math.min(rawRows.length, 5); r++) {
                     const row = rawRows[r];
@@ -201,6 +201,7 @@
                         if (cellVal.includes('l4 (hunt)') || cellVal === 'l4') l4ColIdx = c;
                         if (cellVal.includes('l5 (hunt)') || cellVal === 'l5') l5ColIdx = c;
                         if (cellVal === 'points (hunt)' || cellVal === 'points') pointsColIdx = c;
+                        if (cellVal.includes('goal') || cellVal.includes('%')) percentColIdx = c;
                     }
                 }
 
@@ -247,16 +248,19 @@
                     sumL5 += rL5;
 
                     const basePoints = parseFloat(row[pointsColIdx]) || 0;
-
-                    let rawPercentStr = String(row[percentColIdx] || "").replace('%', '').trim();
-                    let filePercent = parseFloat(rawPercentStr);
                     
-                    if (!isNaN(filePercent) && filePercent > 0 && filePercent <= 5 && rawPercentStr.includes('.')) {
-                        filePercent = Math.round(filePercent * 100);
-                    } else if (isNaN(filePercent)) {
-                        filePercent = 0;
+                    // Коректне зчитування відсотка з файлу Excel (враховує числові значення, дроби та рядки з %)
+                    let rawPercent = row[percentColIdx];
+                    let filePercent = 0;
+                    if (typeof rawPercent === 'number') {
+                        // Якщо Excel зберігає як десятковий дріб (наприклад 3.55 або 49.21) або чистий відсоток
+                        filePercent = rawPercent <= 50 ? Math.round(rawPercent * 100) : Math.round(rawPercent);
                     } else {
-                        filePercent = Math.round(filePercent);
+                        let cleaned = String(rawPercent).replace('%', '').trim().replace(',', '.');
+                        let parsed = parseFloat(cleaned);
+                        if (!isNaN(parsed)) {
+                            filePercent = parsed <= 50 ? Math.round(parsed * 100) : Math.round(parsed);
+                        }
                     }
 
                     parsedData.push({
@@ -318,6 +322,7 @@
                 const isDebtor = !isExcluded && totalPoints < norm;
                 
                 const deficit = isDebtor ? norm - totalPoints : 0;
+                // Якщо є ручне коригування балів — перераховуємо відсоток, інакше беремо готовий з файлу
                 const percent = adj !== 0 ? Math.round((totalPoints / norm) * 100) : player.filePercent;
 
                 return { ...player, adj, totalPoints, isDebtor, isExcluded, deficit, percent };
@@ -424,7 +429,7 @@
                 return;
             }
 
-            let text = `⚠️️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
+            let text = `⚠️ *СПИСОК БОРЖНИКІВ ПО МОНСТРАХ (Норма: ${norm})*\n`;
             text += `----------------------------------\n`;
             debtors.forEach((d) => {
                 text += `${d.name} – ${d.deficit}\n`;
